@@ -57,7 +57,7 @@ func (h *ColoredHandler) Handle(ctx context.Context, record slog.Record) error {
 	})
 
 	// Output format: [TIME COLORED_LEVEL] message attributes
-	fmt.Printf("[%s%s%s %s%s%s]%s%s\n",
+	fmt.Printf("[%s%s%s %s%s%s] %s%s\n",
 		colorDim, timeStr, colorReset,
 		levelColor, levelStr, colorReset,
 		record.Message, attrs)
