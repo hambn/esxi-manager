@@ -2,6 +2,10 @@ package commands
 
 import (
 	"fmt"
+
+	"github.com/esxi-manager/esxi-manager/internal/esxi/network"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"
 )
 
 // CommandParams holds all possible command parameters
@@ -41,7 +45,7 @@ func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command
 	switch commandName {
 	// VM operations
 	case "clone-vm":
-		cmd := &CloneVMCommand{
+		cmd := &vm.CloneCommand{
 			SourceVMName:  params.SourceVMName,
 			SourceVMID:    params.SourceVMID,
 			DestVMName:    params.DestVMName,
@@ -53,46 +57,46 @@ func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command
 		return cmd, nil
 
 	case "create-vm":
-		cmd := &CreateVMCommand{
-			VMName:      params.DestVMName,
-			DiskStore:   params.DestDiskStore,
-			RAM:         params.DestRAM,
-			CPU:         params.DestCPU,
-			Network:     params.DestNetwork,
-			Datastore:   params.DatastoreName,
+		cmd := &vm.CreateCommand{
+			VMName:    params.DestVMName,
+			DiskStore: params.DestDiskStore,
+			RAM:       params.DestRAM,
+			CPU:       params.DestCPU,
+			Network:   params.DestNetwork,
+			Datastore: params.DatastoreName,
 		}
 		return cmd, nil
 
 	case "delete-vm":
-		cmd := &DeleteVMCommand{
+		cmd := &vm.DeleteCommand{
 			VMName: params.VMName,
 		}
 		return cmd, nil
 
 	case "list-vms":
-		return &ListVMsCommand{}, nil
+		return &vm.ListCommand{}, nil
 
 	case "get-vm-info":
-		cmd := &GetVMInfoCommand{
+		cmd := &vm.GetInfoCommand{
 			VMName: params.VMName,
 		}
 		return cmd, nil
 
 	case "power-on-vm":
-		cmd := &PowerOnVMCommand{
+		cmd := &vm.PowerOnCommand{
 			VMName: params.VMName,
 		}
 		return cmd, nil
 
 	case "power-off-vm":
-		cmd := &PowerOffVMCommand{
+		cmd := &vm.PowerOffCommand{
 			VMName: params.VMName,
 		}
 		return cmd, nil
 
 	// Network operations
 	case "create-vswitch":
-		cmd := &CreateVSwitchCommand{
+		cmd := &network.CreateVSwitchCommand{
 			Name:    params.VSwitchName,
 			MTU:     params.MTU,
 			Uplinks: params.Uplinks,
@@ -100,13 +104,13 @@ func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command
 		return cmd, nil
 
 	case "delete-vswitch":
-		cmd := &DeleteVSwitchCommand{
+		cmd := &network.DeleteVSwitchCommand{
 			Name: params.VSwitchName,
 		}
 		return cmd, nil
 
 	case "create-portgroup":
-		cmd := &CreatePortgroupCommand{
+		cmd := &network.CreatePortgroupCommand{
 			Name:        params.PortgroupName,
 			VSwitchName: params.VSwitchName,
 			VLAN:        params.VLAN,
@@ -114,14 +118,14 @@ func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command
 		return cmd, nil
 
 	case "delete-portgroup":
-		cmd := &DeletePortgroupCommand{
+		cmd := &network.DeletePortgroupCommand{
 			Name: params.PortgroupName,
 		}
 		return cmd, nil
 
 	// Storage operations
 	case "list-datastores":
-		return &ListDatastoresCommand{}, nil
+		return &storage.ListDatastoresCommand{}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown command: %s", commandName)

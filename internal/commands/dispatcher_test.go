@@ -2,6 +2,10 @@ package commands
 
 import (
 	"testing"
+
+	"github.com/esxi-manager/esxi-manager/internal/esxi/network"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"
 )
 
 func TestDispatcher_CloneVM(t *testing.T) {
@@ -19,8 +23,8 @@ func TestDispatcher_CloneVM(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*CloneVMCommand); !ok {
-		t.Fatalf("expected CloneVMCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.CloneCommand); !ok {
+		t.Fatalf("expected vm.CloneCommand, got %T", cmd)
 	}
 }
 
@@ -38,8 +42,8 @@ func TestDispatcher_CreateVM(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*CreateVMCommand); !ok {
-		t.Fatalf("expected CreateVMCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.CreateCommand); !ok {
+		t.Fatalf("expected vm.CreateCommand, got %T", cmd)
 	}
 }
 
@@ -54,8 +58,8 @@ func TestDispatcher_DeleteVM(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*DeleteVMCommand); !ok {
-		t.Fatalf("expected DeleteVMCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.DeleteCommand); !ok {
+		t.Fatalf("expected vm.DeleteCommand, got %T", cmd)
 	}
 }
 
@@ -68,8 +72,8 @@ func TestDispatcher_ListVMs(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*ListVMsCommand); !ok {
-		t.Fatalf("expected ListVMsCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.ListCommand); !ok {
+		t.Fatalf("expected vm.ListCommand, got %T", cmd)
 	}
 }
 
@@ -84,8 +88,8 @@ func TestDispatcher_GetVMInfo(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*GetVMInfoCommand); !ok {
-		t.Fatalf("expected GetVMInfoCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.GetInfoCommand); !ok {
+		t.Fatalf("expected vm.GetInfoCommand, got %T", cmd)
 	}
 }
 
@@ -100,8 +104,8 @@ func TestDispatcher_PowerOnVM(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*PowerOnVMCommand); !ok {
-		t.Fatalf("expected PowerOnVMCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.PowerOnCommand); !ok {
+		t.Fatalf("expected vm.PowerOnCommand, got %T", cmd)
 	}
 }
 
@@ -116,8 +120,8 @@ func TestDispatcher_PowerOffVM(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*PowerOffVMCommand); !ok {
-		t.Fatalf("expected PowerOffVMCommand, got %T", cmd)
+	if _, ok := cmd.(*vm.PowerOffCommand); !ok {
+		t.Fatalf("expected vm.PowerOffCommand, got %T", cmd)
 	}
 }
 
@@ -133,8 +137,8 @@ func TestDispatcher_CreateVSwitch(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*CreateVSwitchCommand); !ok {
-		t.Fatalf("expected CreateVSwitchCommand, got %T", cmd)
+	if _, ok := cmd.(*network.CreateVSwitchCommand); !ok {
+		t.Fatalf("expected network.CreateVSwitchCommand, got %T", cmd)
 	}
 }
 
@@ -149,8 +153,8 @@ func TestDispatcher_DeleteVSwitch(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*DeleteVSwitchCommand); !ok {
-		t.Fatalf("expected DeleteVSwitchCommand, got %T", cmd)
+	if _, ok := cmd.(*network.DeleteVSwitchCommand); !ok {
+		t.Fatalf("expected network.DeleteVSwitchCommand, got %T", cmd)
 	}
 }
 
@@ -167,8 +171,8 @@ func TestDispatcher_CreatePortgroup(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*CreatePortgroupCommand); !ok {
-		t.Fatalf("expected CreatePortgroupCommand, got %T", cmd)
+	if _, ok := cmd.(*network.CreatePortgroupCommand); !ok {
+		t.Fatalf("expected network.CreatePortgroupCommand, got %T", cmd)
 	}
 }
 
@@ -183,8 +187,8 @@ func TestDispatcher_DeletePortgroup(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*DeletePortgroupCommand); !ok {
-		t.Fatalf("expected DeletePortgroupCommand, got %T", cmd)
+	if _, ok := cmd.(*network.DeletePortgroupCommand); !ok {
+		t.Fatalf("expected network.DeletePortgroupCommand, got %T", cmd)
 	}
 }
 
@@ -197,8 +201,8 @@ func TestDispatcher_ListDatastores(t *testing.T) {
 		t.Fatalf("Dispatch failed: %v", err)
 	}
 
-	if _, ok := cmd.(*ListDatastoresCommand); !ok {
-		t.Fatalf("expected ListDatastoresCommand, got %T", cmd)
+	if _, ok := cmd.(*storage.ListDatastoresCommand); !ok {
+		t.Fatalf("expected storage.ListDatastoresCommand, got %T", cmd)
 	}
 }
 
