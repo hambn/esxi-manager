@@ -4,6 +4,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/esxi-manager/esxi-manager/internal/common"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 )
 
 // TestConnectionCommand tests the SSH connection to ESXi host
@@ -28,4 +29,11 @@ func (c *TestConnectionCommand) Execute(client *ssh.Client) error {
 
 	common.Info("SSH connection test successful")
 	return nil
+}
+
+// init registers the test-connection command
+func init() {
+	command.Register("test-connection", func(params command.Params) command.Interface {
+		return &TestConnectionCommand{}
+	})
 }
