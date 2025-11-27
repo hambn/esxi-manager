@@ -108,6 +108,12 @@ func ParseFlags() (*Params, error) {
 
 	flag.Parse()
 
+	// Check if there are positional arguments (means they were before flags)
+	if flag.NArg() > 0 {
+		args := flag.Args()
+		return nil, fmt.Errorf("unexpected positional argument(s): %v\n\nHint: All flags (including --command) must come at the start, before any positional arguments.\nDid you put '%s' before your flags?", args, args[0])
+	}
+
 	if err := params.Validate(); err != nil {
 		return nil, err
 	}
