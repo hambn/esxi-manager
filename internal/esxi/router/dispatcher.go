@@ -5,10 +5,10 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	// Import all command packages to trigger their init() functions
 	// which register commands in the central registry
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/general"
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/network"
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage"
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/vm"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/host"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/virtual-machines"
+	// _ "github.com/esxi-manager/esxi-manager/internal/esxi/networking"
+	// _ "github.com/esxi-manager/esxi-manager/internal/esxi/storage"
 )
 
 // Dispatcher routes commands by name using the centralized registry

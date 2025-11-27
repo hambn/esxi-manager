@@ -1,8 +1,8 @@
-package vm
+package host
 
 import "fmt"
 
-// ValidationError represents a VM command validation error
+// ValidationError represents a general command validation error
 type ValidationError struct {
 	message string
 }
@@ -13,10 +13,10 @@ func NewValidationError(msg string) *ValidationError {
 }
 
 func (e *ValidationError) Error() string {
-	return fmt.Sprintf("vm validation error: %s", e.message)
+	return fmt.Sprintf("general validation error: %s", e.message)
 }
 
-// ExecutionError represents a VM command execution error
+// ExecutionError represents a general command execution error
 type ExecutionError struct {
 	message string
 }
@@ -27,5 +27,5 @@ func NewExecutionError(msg string) *ExecutionError {
 }
 
 func (e *ExecutionError) Error() string {
-	return fmt.Sprintf("vm execution error: %s", e.message)
+	return fmt.Sprintf("execution error: %s", e.message)
 }
