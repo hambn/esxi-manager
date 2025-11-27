@@ -15,14 +15,14 @@ import (
 
 // VMInfo represents a virtual machine with detailed info
 type VMInfo struct {
-	ID          string
-	Name        string
-	GuestOS     string
-	FilePath    string
-	Status      string
-	UsedSpace   string
-	CPU         string
-	Memory      string
+	ID        string
+	Name      string
+	GuestOS   string
+	FilePath  string
+	Status    string
+	CPU       string
+	Memory    string
+	UsedSpace string
 }
 
 // ListVMsCommand lists all virtual machines on the ESXi host
@@ -35,247 +35,162 @@ func (c *ListVMsCommand) Validate() error {
 }
 
 func (c *ListVMsCommand) Execute() error {
-	// Manage connection internally
-	manager, err := utils.NewSSHManager(c.host)
+	output, err := c.runCommand("vim-cmd vmsvc/getallvms")
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
-	}
-	defer manager.Close()
-
-	// Connect to host
-	if err := manager.Connect(); err != nil {
-		return fmt.Errorf("failed to connect to ESXi host: %w", err)
+		return fmt.Errorf("failed to list VMs: %w", err)
 	}
 
-	// Get client
-	client, err := manager.GetClient()
-	if err != nil {
-		return fmt.Errorf("failed to get SSH client: %w", err)
-	}
-
-	// List VMs using vim-cmd command
-	var stdout bytes.Buffer
-	session, err := client.NewSession()
-	if err != nil {
-		return fmt.Errorf("failed to create SSH session: %w", err)
-	}
-	session.Stdout = &stdout
-
-	if err := session.Run("vim-cmd vmsvc/getallvms"); err != nil {
-		session.Close()
-		return fmt.Errorf("failed to execute list VMs command: %w", err)
-	}
-	session.Close()
-
-	// Parse VMs and get detailed info for each
-	vms, err := c.parseVMs(stdout.String(), client)
-	if err != nil {
-		return err
-	}
-
+	vms := c.parseVMs(output)
 	c.displayVMs(vms)
 	return nil
 }
 
-func (c *ListVMsCommand) parseVMs(output string, client interface{}) ([]VMInfo, error) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	var vms []VMInfo
+// runCommand executes a command on the ESXi host and returns output
+func (c *ListVMsCommand) runCommand(cmd string) (string, error) {
+	manager, err := utils.NewSSHManager(c.host)
+	if err != nil {
+		return "", err
+	}
+	defer manager.Close()
 
-	// Skip header and empty lines
+	if err := manager.Connect(); err != nil {
+		return "", err
+	}
+
+	client, err := manager.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	var stdout bytes.Buffer
+	session.Stdout = &stdout
+	if err := session.Run(cmd); err != nil {
+		return "", err
+	}
+
+	return stdout.String(), nil
+}
+
+// parseVMs extracts VM information from vim-cmd output and fetches detailed info
+func (c *ListVMsCommand) parseVMs(output string) []VMInfo {
+	var vms []VMInfo
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.Contains(line, "Vmid") {
 			continue
 		}
 
-		// Parse: Vmid   Name               File                  Guest OS     Version
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			vmid := fields[0]
-			name := fields[1]
-
-			// Extract file path: look for [datastore] path pattern
-			filePath := ""
-			fileRegex := regexp.MustCompile(`\[([^\]]+)\]\s+(.+?)(?:\s+\w+Guest|\s*$)`)
-			if matches := fileRegex.FindStringSubmatch(line); len(matches) > 2 {
-				datastoreName := matches[1]
-				vmPath := matches[2]
-				filePath = fmt.Sprintf("[%s] %s", datastoreName, vmPath)
-			}
-
-			// Extract Guest OS (typically at index 4)
-			guestOS := "-"
-			if len(fields) > 4 {
-				guestOS = fields[4]
-			}
-
-			// Get detailed info for this VM
-			vmInfo := VMInfo{
-				ID:       vmid,
-				Name:     name,
-				GuestOS:  guestOS,
-				FilePath: filePath,
-				Status:   "unknown",
-				CPU:      "-",
-				Memory:   "-",
-			}
-
-			// Try to get summary info and merge with existing info
-			if summaryInfo, err := c.getVMSummary(vmid, filePath, client); err == nil {
-				vmInfo.Status = summaryInfo.Status
-				vmInfo.CPU = summaryInfo.CPU
-				vmInfo.Memory = summaryInfo.Memory
-				vmInfo.UsedSpace = summaryInfo.UsedSpace
-			}
-
-			vms = append(vms, vmInfo)
+		vm := c.parseVMLine(line)
+		if vm == nil {
+			continue
 		}
+
+		// Fetch additional details
+		c.enrichVM(vm)
+		vms = append(vms, *vm)
 	}
 
-	return vms, nil
+	return vms
 }
 
-func (c *ListVMsCommand) getVMSummary(vmid string, filePath string, clientInterface interface{}) (VMInfo, error) {
-	vmInfo := VMInfo{
-		ID:       vmid,
-		FilePath: filePath,
-		Status:   "unknown",
-		CPU:      "-",
-		Memory:   "-",
+// parseVMLine parses a single VM line from vim-cmd output
+func (c *ListVMsCommand) parseVMLine(line string) *VMInfo {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return nil
 	}
 
-	// Get a new SSH client from the connection manager
-	// We need to recreate it since we don't have direct access to the manager
-	manager, err := utils.NewSSHManager(c.host)
-	if err != nil {
-		return vmInfo, err
-	}
-	defer manager.Close()
-
-	if err := manager.Connect(); err != nil {
-		return vmInfo, err
+	vm := &VMInfo{
+		ID:        fields[0],
+		Name:      fields[1],
+		GuestOS:   extractField(fields, 4, "-"),
+		Status:    "unknown",
+		CPU:       "-",
+		Memory:    "-",
+		UsedSpace: "-",
 	}
 
-	client, err := manager.GetClient()
-	if err != nil {
-		return vmInfo, err
+	// Extract file path from [datastore] path pattern
+	if match := regexp.MustCompile(`\[([^\]]+)\]\s+(.+?)(?:\s+\w+Guest|\s*$)`).FindStringSubmatch(line); len(match) > 2 {
+		vm.FilePath = fmt.Sprintf("[%s] %s", match[1], match[2])
 	}
 
-	session, err := client.NewSession()
-	if err != nil {
-		return vmInfo, err
-	}
-	defer session.Close()
-
-	var stdout bytes.Buffer
-	session.Stdout = &stdout
-
-	// Get VM summary
-	cmd := fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vmid)
-	if err := session.Run(cmd); err != nil {
-		return vmInfo, err
-	}
-
-	// Parse summary output
-	summaryText := stdout.String()
-	vmInfo = c.parseSummary(summaryText, vmInfo)
-
-	return vmInfo, nil
+	return vm
 }
 
-func (c *ListVMsCommand) parseSummary(summary string, vmInfo VMInfo) VMInfo {
-	// Extract status
-	if strings.Contains(summary, "powerState = \"poweredOn\"") {
-		vmInfo.Status = "on"
-	} else if strings.Contains(summary, "powerState = \"poweredOff\"") {
-		vmInfo.Status = "off"
-	} else if strings.Contains(summary, "powerState = \"suspended\"") {
-		vmInfo.Status = "suspended"
+// enrichVM fetches additional VM details (status, CPU, memory, disk usage)
+func (c *ListVMsCommand) enrichVM(vm *VMInfo) {
+	summaryOutput, err := c.runCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vm.ID))
+	if err != nil {
+		return
+	}
+
+	c.extractVMStatus(summaryOutput, vm)
+	c.extractCPUAndMemory(summaryOutput, vm)
+	c.extractDiskUsage(vm)
+}
+
+// extractVMStatus parses power state from vm summary
+func (c *ListVMsCommand) extractVMStatus(summary string, vm *VMInfo) {
+	switch {
+	case strings.Contains(summary, `powerState = "poweredOn"`):
+		vm.Status = "on"
+	case strings.Contains(summary, `powerState = "poweredOff"`):
+		vm.Status = "off"
+	case strings.Contains(summary, `powerState = "suspended"`):
+		vm.Status = "suspended"
+	}
+}
+
+// extractCPUAndMemory parses CPU and memory info from vm summary
+func (c *ListVMsCommand) extractCPUAndMemory(summary string, vm *VMInfo) {
+	// Extract CPU count
+	if match := regexp.MustCompile(`numCpu\s*=\s*(\d+)`).FindStringSubmatch(summary); len(match) > 1 {
+		vm.CPU = match[1]
 	}
 
 	// Extract memory in MB
-	memRegex := regexp.MustCompile(`memorySizeMB\s*=\s*(\d+)`)
-	if matches := memRegex.FindStringSubmatch(summary); len(matches) > 1 {
-		memMB := matches[1]
-		memBytes := parseInt64(memMB) * 1024 * 1024
-		vmInfo.Memory = utils.FormatBytes(memBytes)
+	if match := regexp.MustCompile(`memorySizeMB\s*=\s*(\d+)`).FindStringSubmatch(summary); len(match) > 1 {
+		memMB := toInt64(match[1])
+		vm.Memory = utils.FormatBytes(memMB * 1024 * 1024)
 	}
-
-	// Extract CPU count
-	cpuRegex := regexp.MustCompile(`numCpu\s*=\s*(\d+)`)
-	if matches := cpuRegex.FindStringSubmatch(summary); len(matches) > 1 {
-		vmInfo.CPU = matches[1]
-	}
-
-	// Get disk usage if we have file path info
-	if vmInfo.FilePath != "" {
-		if usage, err := c.getDiskUsage(vmInfo.FilePath); err == nil {
-			vmInfo.UsedSpace = usage
-		}
-	}
-
-	return vmInfo
 }
 
-func (c *ListVMsCommand) getDiskUsage(filePath string) (string, error) {
-	// Parse filePath format: [datastore] path/to/vm.vmx
-	datastoreRegex := regexp.MustCompile(`\[([^\]]+)\]\s+(.+)`)
-	matches := datastoreRegex.FindStringSubmatch(filePath)
-	if len(matches) < 3 {
-		return "-", fmt.Errorf("invalid file path format")
+// extractDiskUsage calculates VM disk usage from file path
+func (c *ListVMsCommand) extractDiskUsage(vm *VMInfo) {
+	if vm.FilePath == "" {
+		return
 	}
 
-	datastoreName := matches[1]
-	vmFilePath := matches[2]
-
-	// Extract directory path (remove .vmx file name to get directory)
-	vmDirPath := vmFilePath
-	if strings.Contains(vmFilePath, "/") {
-		vmDirPath = vmFilePath[:strings.LastIndex(vmFilePath, "/")]
+	match := regexp.MustCompile(`\[([^\]]+)\]\s+(.+)`).FindStringSubmatch(vm.FilePath)
+	if len(match) < 3 {
+		return
 	}
 
-	// Create SSH connection to run du command
-	manager, err := utils.NewSSHManager(c.host)
-	if err != nil {
-		return "-", err
-	}
-	defer manager.Close()
+	datastore := match[1]
+	vmPath := match[2]
 
-	if err := manager.Connect(); err != nil {
-		return "-", err
+	// Get directory path (without .vmx file)
+	if idx := strings.LastIndex(vmPath, "/"); idx >= 0 {
+		vmPath = vmPath[:idx]
 	}
 
-	client, err := manager.GetClient()
-	if err != nil {
-		return "-", err
+	fullPath := fmt.Sprintf("/vmfs/volumes/%s/%s", datastore, vmPath)
+	output, err := c.runCommand(fmt.Sprintf("du -hs %s 2>/dev/null | awk '{print $1}'", fullPath))
+	if err == nil && strings.TrimSpace(output) != "" {
+		vm.UsedSpace = strings.TrimSpace(output)
 	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		return "-", err
-	}
-	defer session.Close()
-
-	var stdout bytes.Buffer
-	session.Stdout = &stdout
-
-	// Run du command to get disk usage (BusyBox compatible)
-	fullPath := fmt.Sprintf("/vmfs/volumes/%s/%s", datastoreName, vmDirPath)
-	cmd := fmt.Sprintf("du -hs %s 2>/dev/null | awk '{print $1}'", fullPath)
-	if err := session.Run(cmd); err != nil {
-		return "-", err
-	}
-
-	// Parse output - du -hs returns human-readable format (e.g., 16.0G)
-	sizeStr := strings.TrimSpace(stdout.String())
-	if sizeStr == "" {
-		return "-", nil
-	}
-
-	// The output is already in human-readable format, just return it
-	return sizeStr, nil
 }
 
+// displayVMs prints VM information in table format
 func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
 	if len(vms) == 0 {
 		fmt.Println("No virtual machines found")
@@ -288,20 +203,23 @@ func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
 
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			vm.ID,
-			vm.Name,
-			vm.GuestOS,
-			vm.Status,
-			vm.CPU,
-			vm.Memory,
-			vm.UsedSpace,
+			vm.ID, vm.Name, vm.GuestOS, vm.Status, vm.CPU, vm.Memory, vm.UsedSpace,
 		)
 	}
 	w.Flush()
 	fmt.Print(buf.String())
 }
 
-func parseInt64(s string) int64 {
+// Helper functions
+
+func extractField(fields []string, index int, defaultValue string) string {
+	if index < len(fields) {
+		return fields[index]
+	}
+	return defaultValue
+}
+
+func toInt64(s string) int64 {
 	i, _ := strconv.ParseInt(s, 10, 64)
 	return i
 }
@@ -309,8 +227,6 @@ func parseInt64(s string) int64 {
 // init registers the list-vms command
 func init() {
 	command.Register("list-vms", func(params command.Params, host *config.ESXiHost) command.Interface {
-		return &ListVMsCommand{
-			host: host,
-		}
+		return &ListVMsCommand{host: host}
 	})
 }
