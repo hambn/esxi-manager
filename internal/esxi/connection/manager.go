@@ -102,15 +102,35 @@ func (m *Manager) Close() error {
 
 // dial creates a new SSH connection to the ESXi host
 func (m *Manager) dial() (*ssh.Client, error) {
+	// Build authentication methods in order of preference
+	authMethods := []ssh.AuthMethod{
+		// Try password authentication first
+		ssh.Password(m.host.Password),
+		// Also try keyboard-interactive as fallback (many systems prefer this)
+		ssh.KeyboardInteractive(m.keyboardInteractiveChallenge),
+	}
+
 	config := &ssh.ClientConfig{
 		User:            m.host.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(m.host.Password)},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ESXi hosts often have self-signed certs
 		Timeout:         10 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", m.host.URI, m.host.Port)
 	return ssh.Dial("tcp", addr, config)
+}
+
+// keyboardInteractiveChallenge handles keyboard-interactive authentication
+// This is needed for systems like ESXi that require interactive auth
+func (m *Manager) keyboardInteractiveChallenge(user, instruction string, questions []string, echos []bool) ([]string, error) {
+	// For keyboard-interactive, we respond to all prompts with the password
+	// This handles scenarios where the server asks for password via interactive challenge
+	answers := make([]string, len(questions))
+	for i := range answers {
+		answers[i] = m.host.Password
+	}
+	return answers, nil
 }
 
 // testConnection checks if the current connection is still alive
