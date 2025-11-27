@@ -4,7 +4,7 @@ import (
 	"bytes"
 
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
