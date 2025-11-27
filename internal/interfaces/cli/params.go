@@ -27,6 +27,7 @@ OPTIONAL FLAGS:
 
 AVAILABLE COMMANDS:
   test-connection       Test SSH connectivity to ESXi host
+  get-version          Get ESXi host version information
 
 EXAMPLE:
   esxi-manager \
