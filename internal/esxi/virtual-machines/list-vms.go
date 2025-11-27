@@ -209,16 +209,17 @@ func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
 
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tName\tGuest OS\tStatus\tCPU\tMemory\n")
+	fmt.Fprintf(w, "ID\tName\tGuest OS\tStatus\tCPU\tMemory\tUsed Space\n")
 
 	for _, vm := range vms {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			vm.ID,
 			vm.Name,
 			vm.GuestOS,
 			vm.Status,
 			vm.CPU,
 			vm.Memory,
+			vm.UsedSpace,
 		)
 	}
 	w.Flush()
