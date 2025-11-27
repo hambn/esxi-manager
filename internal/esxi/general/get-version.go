@@ -2,8 +2,8 @@ package general
 
 import (
 	"bytes"
+	"fmt"
 
-	"github.com/esxi-manager/esxi-manager/internal/common"
 	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -53,7 +53,7 @@ func (c *GetVersionCommand) Execute() error {
 	}
 
 	version := stdout.String()
-	common.Info("ESXi version retrieved", "version", version)
+	fmt.Print(version)
 	return nil
 }
 

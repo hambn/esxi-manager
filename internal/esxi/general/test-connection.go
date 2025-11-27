@@ -1,7 +1,8 @@
 package general
 
 import (
-	"github.com/esxi-manager/esxi-manager/internal/common"
+	"fmt"
+
 	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -47,7 +48,7 @@ func (c *TestConnectionCommand) Execute() error {
 		return NewExecutionError("failed to execute test command: " + err.Error())
 	}
 
-	common.Info("SSH connection test successful")
+	fmt.Println("Connection successful")
 	return nil
 }
 

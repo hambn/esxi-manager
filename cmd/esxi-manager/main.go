@@ -22,6 +22,4 @@ func main() {
 		common.Error("execution failed", "error", err.Error(), "command", params.Command)
 		os.Exit(1)
 	}
-
-	common.Info("command completed successfully", "command", params.Command)
 }

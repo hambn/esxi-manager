@@ -25,8 +25,6 @@ func NewExecutor(params *Params) *Executor {
 // Executor is simple: just dispatch and execute the command
 // The command manages all its own concerns (connections, parameters, execution)
 func (e *Executor) Execute() error {
-	common.Info("executing command", "command", e.params.Command, "host", e.params.ESXiHostURI)
-
 	// Convert CLI params to ESXiHost config
 	host := e.params.ToESXiHost()
 	cmdParams := e.params.ToCommandParams()
@@ -41,13 +39,11 @@ func (e *Executor) Execute() error {
 	if err := cmd.Validate(); err != nil {
 		return common.WrapError(err, "command validation failed")
 	}
-	common.Info("command validated", "command", e.params.Command)
 
 	// Execute command (command manages its own connections)
 	if err := cmd.Execute(); err != nil {
 		return common.WrapError(err, "command execution failed")
 	}
 
-	common.Info("command executed successfully", "command", e.params.Command)
 	return nil
 }
