@@ -29,6 +29,8 @@ AVAILABLE COMMANDS:
   test-connection       Test SSH connectivity to ESXi host
   get-version          Get ESXi host version information
   list-vms             List all virtual machines on ESXi host
+  list-port-groups     List all port groups on ESXi host
+  list-datastores      List all datastores on ESXi host
 
 EXAMPLE:
   esxi-manager \
