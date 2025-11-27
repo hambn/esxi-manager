@@ -11,6 +11,7 @@ func main() {
 	// Parse CLI flags
 	params, err := cli.ParseFlags()
 	if err != nil {
+		cli.PrintUsage()
 		common.Error("flag parsing failed", "error", err.Error())
 		os.Exit(1)
 	}

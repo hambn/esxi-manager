@@ -3,10 +3,42 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 )
+
+// PrintUsage prints the usage help text
+func PrintUsage() {
+	fmt.Fprintf(os.Stderr, `ESXi Manager CLI
+
+USAGE:
+  esxi-manager [options]
+
+REQUIRED FLAGS:
+  --esxi-host-uri         ESXi host URI/IP address
+  --esxi-host-username    ESXi host username
+  --esxi-host-password    ESXi host password
+  --command              Command to execute
+
+OPTIONAL FLAGS:
+  --esxi-host-port       ESXi host SSH port (default: 22)
+
+AVAILABLE COMMANDS:
+  test-connection       Test SSH connectivity to ESXi host
+
+EXAMPLE:
+  esxi-manager \
+    --esxi-host-uri="192.168.0.186" \
+    --esxi-host-port="22" \
+    --esxi-host-username="root" \
+    --esxi-host-password="H@med1382" \
+    --command="test-connection"
+
+NOTE: All flags must come BEFORE any positional arguments.
+`)
+}
 
 // CommandParams is an alias for command.Params
 type CommandParams = command.Params
