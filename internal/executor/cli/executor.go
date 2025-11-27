@@ -2,21 +2,21 @@ package cli
 
 import (
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/esxi"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/connection"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/router"
 )
 
 // Executor handles CLI command execution
 type Executor struct {
 	params     *Params
-	dispatcher *esxi.Dispatcher
+	dispatcher *router.Dispatcher
 }
 
 // NewExecutor creates a new CLI executor
 func NewExecutor(params *Params) *Executor {
 	return &Executor{
 		params:     params,
-		dispatcher: esxi.NewDispatcher(),
+		dispatcher: router.NewDispatcher(),
 	}
 }
 

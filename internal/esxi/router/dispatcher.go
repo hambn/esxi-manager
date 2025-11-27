@@ -1,8 +1,9 @@
-package esxi
+package router
 
 import (
 	"fmt"
 
+	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/network"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"
@@ -17,7 +18,7 @@ func NewDispatcher() *Dispatcher {
 }
 
 // Dispatch creates a command from a command name and parameters
-func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command, error) {
+func (d *Dispatcher) Dispatch(commandName string, params command.Params) (command.Interface, error) {
 	switch commandName {
 	// VM operations
 	case "clone-vm":

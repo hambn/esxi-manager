@@ -1,8 +1,9 @@
-package esxi
+package router
 
 import (
 	"testing"
 
+	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/network"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"
@@ -10,7 +11,7 @@ import (
 
 func TestDispatcher_CloneVM(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		SourceVMName:  "template",
 		DestVMName:    "new-vm",
 		DestDiskStore: "datastore1",
@@ -30,7 +31,7 @@ func TestDispatcher_CloneVM(t *testing.T) {
 
 func TestDispatcher_CreateVM(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		DestVMName:    "new-vm",
 		DestDiskStore: "datastore1",
 		DestRAM:       2048,
@@ -49,7 +50,7 @@ func TestDispatcher_CreateVM(t *testing.T) {
 
 func TestDispatcher_DeleteVM(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VMName: "vm-to-delete",
 	}
 
@@ -65,7 +66,7 @@ func TestDispatcher_DeleteVM(t *testing.T) {
 
 func TestDispatcher_ListVMs(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{}
+	params := command.Params{}
 
 	cmd, err := d.Dispatch("list-vms", params)
 	if err != nil {
@@ -79,7 +80,7 @@ func TestDispatcher_ListVMs(t *testing.T) {
 
 func TestDispatcher_GetVMInfo(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VMName: "my-vm",
 	}
 
@@ -95,7 +96,7 @@ func TestDispatcher_GetVMInfo(t *testing.T) {
 
 func TestDispatcher_PowerOnVM(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VMName: "my-vm",
 	}
 
@@ -111,7 +112,7 @@ func TestDispatcher_PowerOnVM(t *testing.T) {
 
 func TestDispatcher_PowerOffVM(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VMName: "my-vm",
 	}
 
@@ -127,7 +128,7 @@ func TestDispatcher_PowerOffVM(t *testing.T) {
 
 func TestDispatcher_CreateVSwitch(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VSwitchName: "vswitch0",
 		MTU:         1500,
 	}
@@ -144,7 +145,7 @@ func TestDispatcher_CreateVSwitch(t *testing.T) {
 
 func TestDispatcher_DeleteVSwitch(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		VSwitchName: "vswitch0",
 	}
 
@@ -160,7 +161,7 @@ func TestDispatcher_DeleteVSwitch(t *testing.T) {
 
 func TestDispatcher_CreatePortgroup(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		PortgroupName: "vm-network",
 		VSwitchName:   "vswitch0",
 		VLAN:          100,
@@ -178,7 +179,7 @@ func TestDispatcher_CreatePortgroup(t *testing.T) {
 
 func TestDispatcher_DeletePortgroup(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{
+	params := command.Params{
 		PortgroupName: "vm-network",
 	}
 
@@ -194,7 +195,7 @@ func TestDispatcher_DeletePortgroup(t *testing.T) {
 
 func TestDispatcher_ListDatastores(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{}
+	params := command.Params{}
 
 	cmd, err := d.Dispatch("list-datastores", params)
 	if err != nil {
@@ -208,7 +209,7 @@ func TestDispatcher_ListDatastores(t *testing.T) {
 
 func TestDispatcher_UnknownCommand(t *testing.T) {
 	d := NewDispatcher()
-	params := CommandParams{}
+	params := command.Params{}
 
 	_, err := d.Dispatch("unknown-command", params)
 	if err == nil {
