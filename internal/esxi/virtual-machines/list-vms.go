@@ -17,6 +17,7 @@ import (
 type VMInfo struct {
 	ID          string
 	Name        string
+	GuestOS     string
 	Status      string
 	UsedSpace   string
 	CPU         string
@@ -92,13 +93,20 @@ func (c *ListVMsCommand) parseVMs(output string, client interface{}) ([]VMInfo, 
 			vmid := fields[0]
 			name := fields[1]
 
+			// Extract Guest OS (typically at index 4)
+			guestOS := "-"
+			if len(fields) > 4 {
+				guestOS = fields[4]
+			}
+
 			// Get detailed info for this VM
 			vmInfo := VMInfo{
-				ID:     vmid,
-				Name:   name,
-				Status: "unknown",
-				CPU:    "-",
-				Memory: "-",
+				ID:      vmid,
+				Name:    name,
+				GuestOS: guestOS,
+				Status:  "unknown",
+				CPU:     "-",
+				Memory:  "-",
 			}
 
 			// Try to get summary info and merge with existing info
@@ -201,16 +209,16 @@ func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
 
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tName\tStatus\tCPU\tMemory\tUsed Space\n")
+	fmt.Fprintf(w, "ID\tName\tGuest OS\tStatus\tCPU\tMemory\n")
 
 	for _, vm := range vms {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			vm.ID,
 			vm.Name,
+			vm.GuestOS,
 			vm.Status,
 			vm.CPU,
 			vm.Memory,
-			vm.UsedSpace,
 		)
 	}
 	w.Flush()
