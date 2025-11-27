@@ -1,0 +1,59 @@
+# Claude Code
+.claude
+CLAUDE.md
+
+# Temporary files
+.tmp
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+.coverage
+coverage.out
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+.DS_Store
+
+# Build output directories
+bin/
+dist/
+build/
+
+# Local environment files
+.env
+.env.local
+*.pem
+*.key
+
+# Terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# OS-specific
+Thumbs.db
+.DS_Store
