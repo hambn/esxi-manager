@@ -1,17 +1,17 @@
 package command
 
-import (
-	"golang.org/x/crypto/ssh"
-)
-
 // Interface defines the interface all commands must implement
 // Specific command types are implemented in their respective packages:
 // - internal/esxi/vm for VM operations
 // - internal/esxi/network for network operations
 // - internal/esxi/storage for storage operations
+// - internal/esxi/general for general operations
+//
+// Commands are responsible for managing their own connections and execution.
+// They receive ESXiHost configuration during registration and manage everything internally.
 type Interface interface {
 	Validate() error
-	Execute(client *ssh.Client) error
+	Execute() error
 }
 
 // Params holds all possible command parameters

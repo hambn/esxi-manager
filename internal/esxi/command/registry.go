@@ -3,10 +3,13 @@ package command
 import (
 	"fmt"
 	"sync"
+
+	"github.com/esxi-manager/esxi-manager/internal/config"
 )
 
 // CommandFactory is a function that creates a command instance
-type CommandFactory func(params Params) Interface
+// It receives both the command parameters and the ESXi host configuration
+type CommandFactory func(params Params, host *config.ESXiHost) Interface
 
 // Registry holds all registered commands
 type Registry struct {
@@ -27,8 +30,9 @@ func Register(name string, factory CommandFactory) {
 }
 
 // Get retrieves and instantiates a command by name
+// Commands receive both parameters and ESXi host configuration
 // Returns an error if the command is not registered
-func Get(name string, params Params) (Interface, error) {
+func Get(name string, params Params, host *config.ESXiHost) (Interface, error) {
 	globalRegistry.mu.RLock()
 	factory, ok := globalRegistry.commands[name]
 	globalRegistry.mu.RUnlock()
@@ -37,5 +41,5 @@ func Get(name string, params Params) (Interface, error) {
 		return nil, fmt.Errorf("unknown command: %s", name)
 	}
 
-	return factory(params), nil
+	return factory(params, host), nil
 }

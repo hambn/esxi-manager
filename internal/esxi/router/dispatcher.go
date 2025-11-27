@@ -1,6 +1,7 @@
 package router
 
 import (
+	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 	// Import all command packages to trigger their init() functions
 	// which register commands in the central registry
@@ -21,6 +22,7 @@ func NewDispatcher() *Dispatcher {
 // Dispatch creates a command from a command name and parameters
 // Commands are looked up in the centralized registry
 // (registered by init() functions in command packages)
-func (d *Dispatcher) Dispatch(commandName string, params command.Params) (command.Interface, error) {
-	return command.Get(commandName, params)
+// Each command receives the ESXi host config and manages its own connections
+func (d *Dispatcher) Dispatch(commandName string, params command.Params, host *config.ESXiHost) (command.Interface, error) {
+	return command.Get(commandName, params, host)
 }

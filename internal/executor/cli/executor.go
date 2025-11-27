@@ -2,11 +2,12 @@ package cli
 
 import (
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/connection"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/router"
 )
 
 // Executor handles CLI command execution
+// It just orchestrates: parses flags, dispatches to commands, and calls execute
+// Commands manage their own connections and all internal details
 type Executor struct {
 	params     *Params
 	dispatcher *router.Dispatcher
@@ -21,26 +22,17 @@ func NewExecutor(params *Params) *Executor {
 }
 
 // Execute executes the CLI command
+// Executor is simple: just dispatch and execute the command
+// The command manages all its own concerns (connections, parameters, execution)
 func (e *Executor) Execute() error {
 	common.Info("executing command", "command", e.params.Command, "host", e.params.ESXiHostURI)
 
-	// Create connection manager
+	// Convert CLI params to ESXiHost config
 	host := e.params.ToESXiHost()
-	manager, err := connection.NewManager(host)
-	if err != nil {
-		return common.WrapError(err, "failed to create connection manager")
-	}
-	defer manager.Close()
-
-	// Connect to host
-	if err := manager.Connect(); err != nil {
-		return common.WrapError(err, "failed to connect to ESXi host")
-	}
-	common.Info("connected to ESXi host", "host", e.params.ESXiHostURI)
-
-	// Dispatch command
 	cmdParams := e.params.ToCommandParams()
-	cmd, err := e.dispatcher.Dispatch(e.params.Command, cmdParams)
+
+	// Dispatch command (returns configured command instance)
+	cmd, err := e.dispatcher.Dispatch(e.params.Command, cmdParams, host)
 	if err != nil {
 		return common.WrapError(err, "failed to dispatch command")
 	}
@@ -51,13 +43,8 @@ func (e *Executor) Execute() error {
 	}
 	common.Info("command validated", "command", e.params.Command)
 
-	// Get client and execute
-	client, err := manager.GetClient()
-	if err != nil {
-		return common.WrapError(err, "failed to get SSH client")
-	}
-
-	if err := cmd.Execute(client); err != nil {
+	// Execute command (command manages its own connections)
+	if err := cmd.Execute(); err != nil {
 		return common.WrapError(err, "command execution failed")
 	}
 

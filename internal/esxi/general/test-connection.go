@@ -1,20 +1,40 @@
 package general
 
 import (
-	"golang.org/x/crypto/ssh"
-
 	"github.com/esxi-manager/esxi-manager/internal/common"
+	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/connection"
 )
 
 // TestConnectionCommand tests the SSH connection to ESXi host
-type TestConnectionCommand struct{}
+type TestConnectionCommand struct {
+	host *config.ESXiHost
+}
 
 func (c *TestConnectionCommand) Validate() error {
 	return nil
 }
 
-func (c *TestConnectionCommand) Execute(client *ssh.Client) error {
+func (c *TestConnectionCommand) Execute() error {
+	// Manage connection internally
+	manager, err := connection.NewManager(c.host)
+	if err != nil {
+		return NewExecutionError("failed to create connection manager: " + err.Error())
+	}
+	defer manager.Close()
+
+	// Connect to host
+	if err := manager.Connect(); err != nil {
+		return NewExecutionError("failed to connect to ESXi host: " + err.Error())
+	}
+
+	// Get client
+	client, err := manager.GetClient()
+	if err != nil {
+		return NewExecutionError("failed to get SSH client: " + err.Error())
+	}
+
 	// Create a session to test the connection
 	session, err := client.NewSession()
 	if err != nil {
@@ -33,7 +53,9 @@ func (c *TestConnectionCommand) Execute(client *ssh.Client) error {
 
 // init registers the test-connection command
 func init() {
-	command.Register("test-connection", func(params command.Params) command.Interface {
-		return &TestConnectionCommand{}
+	command.Register("test-connection", func(params command.Params, host *config.ESXiHost) command.Interface {
+		return &TestConnectionCommand{
+			host: host,
+		}
 	})
 }
