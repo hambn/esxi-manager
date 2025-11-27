@@ -4,8 +4,12 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/esxi-manager/esxi-manager/internal/commands"
 	"github.com/esxi-manager/esxi-manager/internal/config"
 )
+
+// CommandParams is an alias for commands.CommandParams
+type CommandParams = commands.CommandParams
 
 // Params holds all CLI command parameters
 type Params struct {
@@ -106,5 +110,24 @@ func (p *Params) ToESXiHost() *config.ESXiHost {
 		Username: p.ESXiHostUsername,
 		Password: p.ESXiHostPassword,
 		Port:     p.ESXiHostPort,
+	}
+}
+
+// ToCommandParams converts CLI params to command parameters
+func (p *Params) ToCommandParams() CommandParams {
+	return CommandParams{
+		VMName:        p.VMName,
+		SourceVMName:  p.SourceVMName,
+		SourceVMID:    p.SourceVMID,
+		DestVMName:    p.DestVMName,
+		DestDiskStore: p.DestDiskStore,
+		DestRAM:       p.DestRAM,
+		DestCPU:       p.DestCPU,
+		DestNetwork:   p.DestNetwork,
+		VSwitchName:   p.VSwitchName,
+		PortgroupName: p.PortgroupName,
+		VLAN:          p.VLAN,
+		MTU:           p.MTU,
+		DatastoreName: p.DatastoreName,
 	}
 }

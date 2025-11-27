@@ -1,0 +1,129 @@
+package commands
+
+import (
+	"fmt"
+)
+
+// CommandParams holds all possible command parameters
+// Executors populate only the fields relevant to their command
+type CommandParams struct {
+	// VM operations
+	VMName          string
+	SourceVMName    string
+	SourceVMID      string
+	DestVMName      string
+	DestDiskStore   string
+	DestRAM         int
+	DestCPU         int
+	DestNetwork     string
+
+	// Network operations
+	VSwitchName     string
+	PortgroupName   string
+	VLAN            int
+	MTU             int
+	Uplinks         []string
+
+	// Storage operations
+	DatastoreName   string
+}
+
+// Dispatcher routes commands by name and creates the appropriate command type
+type Dispatcher struct{}
+
+// NewDispatcher creates a new command dispatcher
+func NewDispatcher() *Dispatcher {
+	return &Dispatcher{}
+}
+
+// Dispatch creates a command from a command name and parameters
+func (d *Dispatcher) Dispatch(commandName string, params CommandParams) (Command, error) {
+	switch commandName {
+	// VM operations
+	case "clone-vm":
+		cmd := &CloneVMCommand{
+			SourceVMName:  params.SourceVMName,
+			SourceVMID:    params.SourceVMID,
+			DestVMName:    params.DestVMName,
+			DestDiskStore: params.DestDiskStore,
+			DestRAM:       params.DestRAM,
+			DestCPU:       params.DestCPU,
+			DestNetwork:   params.DestNetwork,
+		}
+		return cmd, nil
+
+	case "create-vm":
+		cmd := &CreateVMCommand{
+			VMName:      params.DestVMName,
+			DiskStore:   params.DestDiskStore,
+			RAM:         params.DestRAM,
+			CPU:         params.DestCPU,
+			Network:     params.DestNetwork,
+			Datastore:   params.DatastoreName,
+		}
+		return cmd, nil
+
+	case "delete-vm":
+		cmd := &DeleteVMCommand{
+			VMName: params.VMName,
+		}
+		return cmd, nil
+
+	case "list-vms":
+		return &ListVMsCommand{}, nil
+
+	case "get-vm-info":
+		cmd := &GetVMInfoCommand{
+			VMName: params.VMName,
+		}
+		return cmd, nil
+
+	case "power-on-vm":
+		cmd := &PowerOnVMCommand{
+			VMName: params.VMName,
+		}
+		return cmd, nil
+
+	case "power-off-vm":
+		cmd := &PowerOffVMCommand{
+			VMName: params.VMName,
+		}
+		return cmd, nil
+
+	// Network operations
+	case "create-vswitch":
+		cmd := &CreateVSwitchCommand{
+			Name:    params.VSwitchName,
+			MTU:     params.MTU,
+			Uplinks: params.Uplinks,
+		}
+		return cmd, nil
+
+	case "delete-vswitch":
+		cmd := &DeleteVSwitchCommand{
+			Name: params.VSwitchName,
+		}
+		return cmd, nil
+
+	case "create-portgroup":
+		cmd := &CreatePortgroupCommand{
+			Name:        params.PortgroupName,
+			VSwitchName: params.VSwitchName,
+			VLAN:        params.VLAN,
+		}
+		return cmd, nil
+
+	case "delete-portgroup":
+		cmd := &DeletePortgroupCommand{
+			Name: params.PortgroupName,
+		}
+		return cmd, nil
+
+	// Storage operations
+	case "list-datastores":
+		return &ListDatastoresCommand{}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown command: %s", commandName)
+	}
+}
