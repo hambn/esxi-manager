@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
+	"github.com/esxi-manager/esxi-manager/internal/config"
 )
 
 // CommandFactory is a function that creates a command instance

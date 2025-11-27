@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
+	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
 )
 
