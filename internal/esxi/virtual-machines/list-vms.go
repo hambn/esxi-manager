@@ -18,6 +18,7 @@ type VMInfo struct {
 	ID          string
 	Name        string
 	GuestOS     string
+	FilePath    string
 	Status      string
 	UsedSpace   string
 	CPU         string
@@ -93,6 +94,15 @@ func (c *ListVMsCommand) parseVMs(output string, client interface{}) ([]VMInfo, 
 			vmid := fields[0]
 			name := fields[1]
 
+			// Extract file path: look for [datastore] path pattern
+			filePath := ""
+			fileRegex := regexp.MustCompile(`\[([^\]]+)\]\s+(.+?)(?:\s+\w+Guest|\s*$)`)
+			if matches := fileRegex.FindStringSubmatch(line); len(matches) > 2 {
+				datastoreName := matches[1]
+				vmPath := matches[2]
+				filePath = fmt.Sprintf("[%s] %s", datastoreName, vmPath)
+			}
+
 			// Extract Guest OS (typically at index 4)
 			guestOS := "-"
 			if len(fields) > 4 {
@@ -101,16 +111,17 @@ func (c *ListVMsCommand) parseVMs(output string, client interface{}) ([]VMInfo, 
 
 			// Get detailed info for this VM
 			vmInfo := VMInfo{
-				ID:      vmid,
-				Name:    name,
-				GuestOS: guestOS,
-				Status:  "unknown",
-				CPU:     "-",
-				Memory:  "-",
+				ID:       vmid,
+				Name:     name,
+				GuestOS:  guestOS,
+				FilePath: filePath,
+				Status:   "unknown",
+				CPU:      "-",
+				Memory:   "-",
 			}
 
 			// Try to get summary info and merge with existing info
-			if summaryInfo, err := c.getVMSummary(vmid, client); err == nil {
+			if summaryInfo, err := c.getVMSummary(vmid, filePath, client); err == nil {
 				vmInfo.Status = summaryInfo.Status
 				vmInfo.CPU = summaryInfo.CPU
 				vmInfo.Memory = summaryInfo.Memory
@@ -124,12 +135,13 @@ func (c *ListVMsCommand) parseVMs(output string, client interface{}) ([]VMInfo, 
 	return vms, nil
 }
 
-func (c *ListVMsCommand) getVMSummary(vmid string, clientInterface interface{}) (VMInfo, error) {
+func (c *ListVMsCommand) getVMSummary(vmid string, filePath string, clientInterface interface{}) (VMInfo, error) {
 	vmInfo := VMInfo{
-		ID:     vmid,
-		Status: "unknown",
-		CPU:    "-",
-		Memory: "-",
+		ID:       vmid,
+		FilePath: filePath,
+		Status:   "unknown",
+		CPU:      "-",
+		Memory:   "-",
 	}
 
 	// Get a new SSH client from the connection manager
@@ -195,10 +207,73 @@ func (c *ListVMsCommand) parseSummary(summary string, vmInfo VMInfo) VMInfo {
 		vmInfo.CPU = matches[1]
 	}
 
-	// For used space, we would need to run du command - skip for now and mark as "-"
-	vmInfo.UsedSpace = "-"
+	// Get disk usage if we have file path info
+	if vmInfo.FilePath != "" {
+		if usage, err := c.getDiskUsage(vmInfo.FilePath); err == nil {
+			vmInfo.UsedSpace = usage
+		}
+	}
 
 	return vmInfo
+}
+
+func (c *ListVMsCommand) getDiskUsage(filePath string) (string, error) {
+	// Parse filePath format: [datastore] path/to/vm.vmx
+	datastoreRegex := regexp.MustCompile(`\[([^\]]+)\]\s+(.+)`)
+	matches := datastoreRegex.FindStringSubmatch(filePath)
+	if len(matches) < 3 {
+		return "-", fmt.Errorf("invalid file path format")
+	}
+
+	datastoreName := matches[1]
+	vmFilePath := matches[2]
+
+	// Extract directory path (remove .vmx file name to get directory)
+	vmDirPath := vmFilePath
+	if strings.Contains(vmFilePath, "/") {
+		vmDirPath = vmFilePath[:strings.LastIndex(vmFilePath, "/")]
+	}
+
+	// Create SSH connection to run du command
+	manager, err := utils.NewSSHManager(c.host)
+	if err != nil {
+		return "-", err
+	}
+	defer manager.Close()
+
+	if err := manager.Connect(); err != nil {
+		return "-", err
+	}
+
+	client, err := manager.GetClient()
+	if err != nil {
+		return "-", err
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "-", err
+	}
+	defer session.Close()
+
+	var stdout bytes.Buffer
+	session.Stdout = &stdout
+
+	// Run du command to get disk usage (BusyBox compatible)
+	fullPath := fmt.Sprintf("/vmfs/volumes/%s/%s", datastoreName, vmDirPath)
+	cmd := fmt.Sprintf("du -hs %s 2>/dev/null | awk '{print $1}'", fullPath)
+	if err := session.Run(cmd); err != nil {
+		return "-", err
+	}
+
+	// Parse output - du -hs returns human-readable format (e.g., 16.0G)
+	sizeStr := strings.TrimSpace(stdout.String())
+	if sizeStr == "" {
+		return "-", nil
+	}
+
+	// The output is already in human-readable format, just return it
+	return sizeStr, nil
 }
 
 func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
