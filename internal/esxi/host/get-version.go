@@ -1,7 +1,6 @@
 package host
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/esxi-manager/esxi-manager/internal/config"
@@ -9,7 +8,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// GetVersionCommand retrieves the ESXi host version information
 type GetVersionCommand struct {
 	host *config.ESXiHost
 }
@@ -19,49 +17,23 @@ func (c *GetVersionCommand) Validate() error {
 }
 
 func (c *GetVersionCommand) Execute() error {
-	// Manage connection internally
 	manager, err := utils.NewSSHManager(c.host)
 	if err != nil {
-		return NewExecutionError("failed to create SSH manager: " + err.Error())
+		return fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
-	// Connect to host
-	if err := manager.Connect(); err != nil {
-		return NewExecutionError("failed to connect to ESXi host: " + err.Error())
-	}
-
-	// Get client
-	client, err := manager.GetClient()
+	output, err := manager.RunCommand("vmware -v")
 	if err != nil {
-		return NewExecutionError("failed to get SSH client: " + err.Error())
+		return fmt.Errorf("failed to get version: %w", err)
 	}
 
-	// Create a session
-	session, err := client.NewSession()
-	if err != nil {
-		return NewExecutionError("failed to create SSH session: " + err.Error())
-	}
-	defer session.Close()
-
-	// Get version using vmware -v command
-	var stdout bytes.Buffer
-	session.Stdout = &stdout
-
-	if err := session.Run("vmware -v"); err != nil {
-		return NewExecutionError("failed to execute version command: " + err.Error())
-	}
-
-	version := stdout.String()
-	fmt.Print(version)
+	fmt.Print(output)
 	return nil
 }
 
-// init registers the get-version command
 func init() {
 	command.Register("get-version", func(params command.Params, host *config.ESXiHost) command.Interface {
-		return &GetVersionCommand{
-			host: host,
-		}
+		return &GetVersionCommand{host: host}
 	})
 }

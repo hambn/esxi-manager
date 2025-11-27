@@ -166,3 +166,28 @@ func (m *SSHManager) IsConnected() bool {
 	defer m.mu.RUnlock()
 	return m.client != nil && m.testConnection() == nil
 }
+
+// RunCommand executes a command and returns its output
+func (m *SSHManager) RunCommand(cmd string) (string, error) {
+	if err := m.Connect(); err != nil {
+		return "", fmt.Errorf("failed to connect: %w", err)
+	}
+
+	client, err := m.GetClient()
+	if err != nil {
+		return "", fmt.Errorf("failed to get client: %w", err)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	output, err := session.Output(cmd)
+	if err != nil {
+		return "", fmt.Errorf("command failed: %w", err)
+	}
+
+	return string(output), nil
+}
