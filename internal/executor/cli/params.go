@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/esxi-manager/esxi-manager/internal/commands"
 	"github.com/esxi-manager/esxi-manager/internal/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi"
 )
 
-// CommandParams is an alias for commands.CommandParams
-type CommandParams = commands.CommandParams
+// CommandParams is an alias for esxi.CommandParams
+type CommandParams = esxi.CommandParams
 
 // Params holds all CLI command parameters
 type Params struct {

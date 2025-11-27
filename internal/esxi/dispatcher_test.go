@@ -1,4 +1,4 @@
-package commands
+package esxi
 
 import (
 	"testing"

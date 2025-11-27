@@ -1,4 +1,4 @@
-package commands
+package esxi
 
 import (
 	"fmt"
@@ -7,30 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"
 )
-
-// CommandParams holds all possible command parameters
-// Executors populate only the fields relevant to their command
-type CommandParams struct {
-	// VM operations
-	VMName          string
-	SourceVMName    string
-	SourceVMID      string
-	DestVMName      string
-	DestDiskStore   string
-	DestRAM         int
-	DestCPU         int
-	DestNetwork     string
-
-	// Network operations
-	VSwitchName     string
-	PortgroupName   string
-	VLAN            int
-	MTU             int
-	Uplinks         []string
-
-	// Storage operations
-	DatastoreName   string
-}
 
 // Dispatcher routes commands by name and creates the appropriate command type
 type Dispatcher struct{}
