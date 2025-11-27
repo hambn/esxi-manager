@@ -4,7 +4,7 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/common"
 	"github.com/esxi-manager/esxi-manager/internal/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/connection"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
 // TestConnectionCommand tests the SSH connection to ESXi host
@@ -18,9 +18,9 @@ func (c *TestConnectionCommand) Validate() error {
 
 func (c *TestConnectionCommand) Execute() error {
 	// Manage connection internally
-	manager, err := connection.NewManager(c.host)
+	manager, err := utils.NewSSHManager(c.host)
 	if err != nil {
-		return NewExecutionError("failed to create connection manager: " + err.Error())
+		return NewExecutionError("failed to create SSH manager: " + err.Error())
 	}
 	defer manager.Close()
 

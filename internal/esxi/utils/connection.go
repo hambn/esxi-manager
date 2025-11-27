@@ -1,6 +1,7 @@
-package connection
+package utils
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,8 +11,13 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/config"
 )
 
-// Manager handles SSH connections with pooling and reconnection logic
-type Manager struct {
+var (
+	ErrNotConnected = errors.New("not connected to ESXi host")
+	ErrDialFailed   = errors.New("failed to establish SSH connection")
+)
+
+// SSHManager handles SSH connections with pooling and reconnection logic
+type SSHManager struct {
 	host        *config.ESXiHost
 	client      *ssh.Client
 	mu          sync.RWMutex
@@ -19,13 +25,13 @@ type Manager struct {
 	retryDelay  time.Duration
 }
 
-// NewManager creates a new connection manager for an ESXi host
-func NewManager(host *config.ESXiHost) (*Manager, error) {
+// NewSSHManager creates a new SSH connection manager for an ESXi host
+func NewSSHManager(host *config.ESXiHost) (*SSHManager, error) {
 	if err := host.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid host configuration: %w", err)
 	}
 
-	return &Manager{
+	return &SSHManager{
 		host:        host,
 		maxAttempts: 3,
 		retryDelay:  2 * time.Second,
@@ -33,7 +39,7 @@ func NewManager(host *config.ESXiHost) (*Manager, error) {
 }
 
 // Connect establishes an SSH connection to the ESXi host with retry logic
-func (m *Manager) Connect() error {
+func (m *SSHManager) Connect() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -66,7 +72,7 @@ func (m *Manager) Connect() error {
 }
 
 // GetClient returns the active SSH client, reconnecting if necessary
-func (m *Manager) GetClient() (*ssh.Client, error) {
+func (m *SSHManager) GetClient() (*ssh.Client, error) {
 	m.mu.RLock()
 	if m.client != nil {
 		if err := m.testConnection(); err == nil {
@@ -82,12 +88,12 @@ func (m *Manager) GetClient() (*ssh.Client, error) {
 	}
 
 	m.mu.RLock()
-	defer m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.client, nil
 }
 
 // Close closes the SSH connection
-func (m *Manager) Close() error {
+func (m *SSHManager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -101,7 +107,7 @@ func (m *Manager) Close() error {
 }
 
 // dial creates a new SSH connection to the ESXi host
-func (m *Manager) dial() (*ssh.Client, error) {
+func (m *SSHManager) dial() (*ssh.Client, error) {
 	// Build authentication methods in order of preference
 	authMethods := []ssh.AuthMethod{
 		// Try password authentication first
@@ -123,7 +129,7 @@ func (m *Manager) dial() (*ssh.Client, error) {
 
 // keyboardInteractiveChallenge handles keyboard-interactive authentication
 // This is needed for systems like ESXi that require interactive auth
-func (m *Manager) keyboardInteractiveChallenge(user, instruction string, questions []string, echos []bool) ([]string, error) {
+func (m *SSHManager) keyboardInteractiveChallenge(user, instruction string, questions []string, echos []bool) ([]string, error) {
 	// For keyboard-interactive, we respond to all prompts with the password
 	// This handles scenarios where the server asks for password via interactive challenge
 	answers := make([]string, len(questions))
@@ -134,7 +140,7 @@ func (m *Manager) keyboardInteractiveChallenge(user, instruction string, questio
 }
 
 // testConnection checks if the current connection is still alive
-func (m *Manager) testConnection() error {
+func (m *SSHManager) testConnection() error {
 	if m.client == nil {
 		return ErrNotConnected
 	}
@@ -155,7 +161,7 @@ func (m *Manager) testConnection() error {
 }
 
 // IsConnected returns true if there is an active connection
-func (m *Manager) IsConnected() bool {
+func (m *SSHManager) IsConnected() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.client != nil && m.testConnection() == nil
