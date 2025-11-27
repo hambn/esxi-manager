@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/executor/cli"
+	"github.com/esxi-manager/esxi-manager/internal/interfaces/cli"
 )
 
 func main() {
