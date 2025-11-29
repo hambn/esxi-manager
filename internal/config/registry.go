@@ -27,3 +27,18 @@ func GetCommand(name string, params CommandParams, host *ESXiHost) (CommandInter
 
 	return factory(params, host), nil
 }
+
+// Dispatcher routes commands by name using the centralized registry
+type Dispatcher struct{}
+
+// NewDispatcher creates a new command dispatcher
+func NewDispatcher() *Dispatcher {
+	return &Dispatcher{}
+}
+
+// Dispatch creates a command from a command name and parameters
+// Commands are looked up in the centralized registry
+// Each command receives the ESXi host config and manages its own connections
+func (d *Dispatcher) Dispatch(commandName string, params CommandParams, host *ESXiHost) (CommandInterface, error) {
+	return GetCommand(commandName, params, host)
+}

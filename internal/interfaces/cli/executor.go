@@ -2,7 +2,13 @@ package cli
 
 import (
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/framework/router"
+	"github.com/esxi-manager/esxi-manager/internal/config"
+	// Import all command packages to trigger their init() functions
+	// which register commands in the central registry
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/host"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/virtual-machines"
 )
 
 // Executor handles CLI command execution
@@ -10,14 +16,14 @@ import (
 // Commands manage their own connections and all internal details
 type Executor struct {
 	params     *Params
-	dispatcher *router.Dispatcher
+	dispatcher *config.Dispatcher
 }
 
 // NewExecutor creates a new CLI executor
 func NewExecutor(params *Params) *Executor {
 	return &Executor{
 		params:     params,
-		dispatcher: router.NewDispatcher(),
+		dispatcher: config.NewDispatcher(),
 	}
 }
 
