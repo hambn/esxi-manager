@@ -112,48 +112,77 @@ func (i *InspectVM) resolveVMIDFromName(mgr *utils.SSHManager, vmName string) (s
 
 // InspectVMInfo holds all gathered VM inspection information
 type InspectVMInfo struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	State       string          `json:"state"`
-	PowerState  string          `json:"power_state"`
-	UUID        string          `json:"uuid"`
-	BiosUUID    string          `json:"bios_uuid"`
-	ConfigPath  string          `json:"config_path"`
-	Annotation  string          `json:"annotation"`
-	CreateDate  string          `json:"create_date"`
-	UpTime      string          `json:"up_time"`
-	Version     string          `json:"version"`
-	Firmware    string          `json:"firmware"`
-	GuestOS     string          `json:"guest_os"`
-	ToolsStatus string          `json:"tools_status"`
-	ToolsVersion string         `json:"tools_version"`
-	Hardware    HardwareInfo    `json:"hardware"`
+	// Basic identification
+	ID   string `json:"id"`
+	Name string `json:"name"`
+
+	// Power and connection state
+	PowerState       string `json:"power_state,omitempty"`
+	ConnectionState  string `json:"connection_state,omitempty"`
+	BootTime         string `json:"boot_time,omitempty"`
+	FaultTolerance   string `json:"fault_tolerance_state,omitempty"`
+
+	// UUIDs and identifiers
+	UUID         string `json:"uuid,omitempty"`
+	InstanceUUID string `json:"instance_uuid,omitempty"`
+	BiosUUID     string `json:"bios_uuid,omitempty"`
+
+	// Configuration
+	ConfigPath  string `json:"config_path,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Firmware    string `json:"firmware,omitempty"`
+	GuestOS     string `json:"guest_os,omitempty"`
+	GuestID     string `json:"guest_id,omitempty"`
+
+	// VM metadata
+	Annotation string `json:"annotation,omitempty"`
+	CreateDate string `json:"create_date,omitempty"`
+	Template   bool   `json:"template,omitempty"`
+
+	// Tools and runtime
+	ToolsStatus  string `json:"tools_status,omitempty"`
+	ToolsVersion string `json:"tools_version,omitempty"`
+	ToolsType    string `json:"tools_type,omitempty"`
+
+	// Hardware and resources
+	Hardware HardwareInfo `json:"hardware"`
+
+	// Usage metrics
+	MaxCpuUsage   int `json:"max_cpu_usage,omitempty"`
+	MaxMemoryUsage int `json:"max_memory_usage,omitempty"`
+
+	// Infrastructure
 	Networks    []NetworkInfo   `json:"networks"`
 	Disks       []DiskInfo      `json:"disks"`
 	Datastores  []DatastoreInfo `json:"datastores"`
-	Snapshots   []SnapshotInfo  `json:"snapshots"`
-	VMXConfig   map[string]string `json:"vmx_config"`
-	VMDKConfigs []VMDKInfo      `json:"vmdk_configs"`
+	Snapshots   []SnapshotInfo  `json:"snapshots,omitempty"`
+
+	// Raw configuration files
+	VMXConfig   map[string]string `json:"vmx_config,omitempty"`
+	VMDKConfigs []VMDKInfo        `json:"vmdk_configs,omitempty"`
 
 	// Internal fields not exported to JSON
-	CPUs           int            `json:"-"`
-	Memory         int            `json:"-"`
-	NICs           int            `json:"-"`
-	DiskCount      int            `json:"-"`
-	MaxCPUs        int            `json:"-"`
-	MaxMemory      int            `json:"-"`
-	BootDelay      int            `json:"-"`
-	ToolsRunning   string         `json:"-"`
-	VMXPath        string         `json:"-"`
+	CPUs         int    `json:"-"`
+	Memory       int    `json:"-"`
+	NICs         int    `json:"-"`
+	DiskCount    int    `json:"-"`
+	MaxCPUs      int    `json:"-"`
+	MaxMemory    int    `json:"-"`
+	BootDelay    int    `json:"-"`
+	ToolsRunning string `json:"-"`
+	VMXPath      string `json:"-"`
 }
 
 // HardwareInfo contains hardware specifications
 type HardwareInfo struct {
-	CPUs      int `json:"cpus"`
-	Memory    int `json:"memory_mb"`
-	MaxCPUs   int `json:"max_cpus"`
-	MaxMemory int `json:"max_memory_mb"`
-	BootDelay int `json:"boot_delay_ms"`
+	CPUs              int `json:"cpus"`
+	Memory            int `json:"memory_mb"`
+	MaxCPUs           int `json:"max_cpus,omitempty"`
+	MaxMemory         int `json:"max_memory_mb,omitempty"`
+	BootDelay         int `json:"boot_delay_ms,omitempty"`
+	CoresPerSocket    int `json:"cores_per_socket,omitempty"`
+	SimultaneousThreads int `json:"simultaneous_threads,omitempty"`
+	MotherboardLayout string `json:"motherboard_layout,omitempty"`
 }
 
 // NetworkInfo holds NIC information
@@ -310,29 +339,34 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 // BASIC INFO GATHERING
 // ============================================================================
 
-// getBasicInfo retrieves basic VM information from vim-cmd
+// getBasicInfo retrieves basic VM information from vim-cmd get.summary
 func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get basic VM info")
 	}
 
-	// Basic info
+	// Basic identification
 	parseConfigValueFlexible(output, []string{"name =", "name="}, &info.Name)
-	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state="}, &info.State)
-	parseConfigValueFlexible(output, []string{"config.annotation =", "config.annotation=", "annotation =", "annotation="}, &info.Annotation)
 
-	// UUID info
-	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid =", "uuid="}, &info.UUID)
+	// Power and connection state
+	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState ="}, &info.PowerState)
+	parseConfigValueFlexible(output, []string{"connectionState =", "connectionState=", "runtime.connectionState ="}, &info.ConnectionState)
+	parseConfigValueFlexible(output, []string{"bootTime =", "bootTime=", "runtime.bootTime ="}, &info.BootTime)
+	parseConfigValueFlexible(output, []string{"faultToleranceState =", "faultToleranceState=", "runtime.faultToleranceState ="}, &info.FaultTolerance)
+
+	// UUIDs
+	parseConfigValueFlexible(output, []string{"uuid =", "uuid=", "config.uuid =", "config.uuid="}, &info.UUID)
 	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios ="}, &info.BiosUUID)
 
-	// Guest and tools info
-	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname =", "guestOS =", "config.guestFullName ="}, &info.GuestOS)
-	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus =", "guest.toolsRunningStatus ="}, &info.ToolsStatus)
-	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version =", "guest.toolsVersion =", "guestToolsVersion ="}, &info.ToolsVersion)
+	// Guest and tools from summary
+	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname =", "guestOS ="}, &info.GuestOS)
+	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus ="}, &info.ToolsStatus)
+	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version ="}, &info.ToolsVersion)
 
-	// Power state
-	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState ="}, &info.PowerState)
+	// Usage metrics
+	parseIntValueFlexible(output, []string{"maxCpuUsage =", "maxCpuUsage=", "runtime.maxCpuUsage ="}, &info.MaxCpuUsage)
+	parseIntValueFlexible(output, []string{"maxMemoryUsage =", "maxMemoryUsage=", "runtime.maxMemoryUsage ="}, &info.MaxMemoryUsage)
 
 	// Config file path
 	parseConfigValueFlexible(output, []string{"config.files.vmPathName =", "config.files.vmPathName=", "vmPathName =", "vmPathName="}, &info.ConfigPath)
@@ -356,13 +390,14 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 	return nil
 }
 
-// getHardwareInfo retrieves hardware configuration
+// getHardwareInfo retrieves hardware configuration and metadata from vim-cmd get.config
 func (i *InspectVM) getHardwareInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get hardware info")
 	}
 
+	// Hardware specifications
 	parseIntValueFlexible(output, []string{"memoryMB =", "memoryMB=", "config.hardware.memoryMB ="}, &info.Memory)
 	parseIntValueFlexible(output, []string{"numCPU =", "numCPU=", "config.hardware.numCPU ="}, &info.CPUs)
 	parseConfigValueFlexible(output, []string{"version =", "version=", "config.version ="}, &info.Version)
@@ -370,6 +405,27 @@ func (i *InspectVM) getHardwareInfo(mgr *utils.SSHManager, vmID string, info *In
 	parseIntValueFlexible(output, []string{"bootDelay =", "bootDelay=", "config.hardware.bootDelay ="}, &info.BootDelay)
 	parseIntValueFlexible(output, []string{"maxCpus =", "maxCpus=", "config.hardware.maxCpus ="}, &info.MaxCPUs)
 	parseIntValueFlexible(output, []string{"maxMemory =", "maxMemory=", "config.hardware.maxMemory ="}, &info.MaxMemory)
+
+	// Hardware details
+	parseIntValueFlexible(output, []string{"numCoresPerSocket =", "numCoresPerSocket=", "config.hardware.numCoresPerSocket ="}, &info.Hardware.CoresPerSocket)
+	parseIntValueFlexible(output, []string{"simultaneousThreads =", "simultaneousThreads=", "config.hardware.simultaneousThreads ="}, &info.Hardware.SimultaneousThreads)
+	parseConfigValueFlexible(output, []string{"motherboardLayout =", "motherboardLayout=", "config.hardware.motherboardLayout ="}, &info.Hardware.MotherboardLayout)
+
+	// VM metadata
+	parseConfigValueFlexible(output, []string{"createDate =", "createDate=", "config.createDate ="}, &info.CreateDate)
+	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "config.guestFullName ="}, &info.GuestOS)
+	parseConfigValueFlexible(output, []string{"guestId =", "guestId=", "config.guestId ="}, &info.GuestID)
+	parseConfigValueFlexible(output, []string{"uuid =", "uuid=", "config.uuid ="}, &info.UUID)
+	parseConfigValueFlexible(output, []string{"instanceUuid =", "instanceUuid=", "config.instanceUuid ="}, &info.InstanceUUID)
+
+	// Annotation and metadata
+	parseConfigValueFlexible(output, []string{"annotation =", "annotation=", "config.annotation ="}, &info.Annotation)
+
+	// Tools info from config
+	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "config.tools.toolsVersion =", "tools.toolsVersion ="}, &info.ToolsVersion)
+	parseConfigValueFlexible(output, []string{"toolsInstallType =", "toolsInstallType=", "config.tools.toolsInstallType ="}, &info.ToolsType)
+
+	// Network and disk counts
 	parseIntValueFlexible(output, []string{"numEthernetCards =", "numEthernetCards=", "config.hardware.numEthernetCards ="}, &info.NICs)
 	parseIntValueFlexible(output, []string{"numVirtualDisks =", "numVirtualDisks=", "config.hardware.numVirtualDisks ="}, &info.DiskCount)
 
