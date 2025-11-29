@@ -881,25 +881,62 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 // Helper functions to parse vim-cmd output
 
 // parseConfigValueFlexible tries multiple key patterns to find a value
+// It's very flexible to handle different vim-cmd output formats
 func parseConfigValueFlexible(output string, keys []string, target *string) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
 		for _, key := range keys {
-			if strings.Contains(line, key) {
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) == 2 {
-					value := strings.TrimSpace(strings.Trim(parts[1], "\",'"))
-					// Skip <unset>, (unset) and other placeholder values - check with and without quotes
-					value = strings.Trim(value, "\"'")
-					if !isPlaceholderValue(value) && value != "" {
-						*target = value
-						return // Found, stop searching
+			keyLower := strings.ToLower(key)
+			lineLower := strings.ToLower(line)
+
+			// Check if this line contains our key
+			if strings.Contains(lineLower, strings.TrimSpace(keyLower)) {
+				// Try to extract value after = sign
+				if strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						value := extractValue(parts[1])
+						if value != "" && !isPlaceholderValue(value) {
+							*target = value
+							return // Found, stop searching
+						}
 					}
 				}
-				return // Found but empty/unset, stop searching
+				// Try to extract value after : sign
+				if strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						value := extractValue(parts[1])
+						if value != "" && !isPlaceholderValue(value) {
+							*target = value
+							return // Found, stop searching
+						}
+					}
+				}
+				return // Found but couldn't extract, stop searching
 			}
 		}
 	}
+}
+
+// extractValue cleans up a value extracted from vim-cmd output
+func extractValue(raw string) string {
+	// Remove leading/trailing whitespace and quotes
+	value := strings.TrimSpace(raw)
+	value = strings.Trim(value, "\"'")
+
+	// Remove trailing commas (sometimes present in structured output)
+	value = strings.TrimSuffix(value, ",")
+
+	// Clean up multiple spaces
+	value = strings.Join(strings.Fields(value), " ")
+
+	return value
 }
 
 // isPlaceholderValue checks if a value is a placeholder like <unset>
@@ -926,14 +963,40 @@ func parseConfigValue(output, key string, target *string) {
 func parseIntValueFlexible(output string, keys []string, target *int) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
 		for _, key := range keys {
-			if strings.Contains(line, key) {
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) == 2 {
-					value := strings.TrimSpace(parts[1])
-					fmt.Sscanf(value, "%d", target)
+			keyLower := strings.ToLower(key)
+			lineLower := strings.ToLower(line)
+
+			// Check if this line contains our key
+			if strings.Contains(lineLower, strings.TrimSpace(keyLower)) {
+				// Try to extract value after = sign
+				if strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						value := extractValue(parts[1])
+						if value != "" {
+							fmt.Sscanf(value, "%d", target)
+							return // Found, stop searching
+						}
+					}
 				}
-				return // Found, stop searching
+				// Try to extract value after : sign
+				if strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						value := extractValue(parts[1])
+						if value != "" {
+							fmt.Sscanf(value, "%d", target)
+							return // Found, stop searching
+						}
+					}
+				}
+				return // Found but couldn't extract, stop searching
 			}
 		}
 	}
