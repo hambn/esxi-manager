@@ -6,6 +6,91 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/config"
 )
 
+// ParseFlags Tests
+
+func TestValidateParams_Success(t *testing.T) {
+	params := &config.Params{
+		ESXiHostURI:      "192.168.1.100",
+		ESXiHostUsername: "root",
+		ESXiHostPassword: "password",
+		ESXiHostPort:     22,
+	}
+
+	err := validateParams(params, "list-vms")
+	if err != nil {
+		t.Fatalf("validateParams failed: %v", err)
+	}
+}
+
+func TestValidateParams_MissingURI(t *testing.T) {
+	params := &config.Params{
+		ESXiHostUsername: "root",
+		ESXiHostPassword: "password",
+		ESXiHostPort:     22,
+	}
+
+	err := validateParams(params, "list-vms")
+	if err == nil {
+		t.Fatal("expected error for missing URI")
+	}
+}
+
+func TestValidateParams_MissingUsername(t *testing.T) {
+	params := &config.Params{
+		ESXiHostURI:      "192.168.1.100",
+		ESXiHostPassword: "password",
+		ESXiHostPort:     22,
+	}
+
+	err := validateParams(params, "list-vms")
+	if err == nil {
+		t.Fatal("expected error for missing username")
+	}
+}
+
+func TestValidateParams_MissingPassword(t *testing.T) {
+	params := &config.Params{
+		ESXiHostURI:      "192.168.1.100",
+		ESXiHostUsername: "root",
+		ESXiHostPort:     22,
+	}
+
+	err := validateParams(params, "list-vms")
+	if err == nil {
+		t.Fatal("expected error for missing password")
+	}
+}
+
+func TestValidateParams_MissingCommand(t *testing.T) {
+	params := &config.Params{
+		ESXiHostURI:      "192.168.1.100",
+		ESXiHostUsername: "root",
+		ESXiHostPassword: "password",
+		ESXiHostPort:     22,
+	}
+
+	err := validateParams(params, "")
+	if err == nil {
+		t.Fatal("expected error for missing command")
+	}
+}
+
+func TestValidateParams_InvalidPort(t *testing.T) {
+	params := &config.Params{
+		ESXiHostURI:      "192.168.1.100",
+		ESXiHostUsername: "root",
+		ESXiHostPassword: "password",
+		ESXiHostPort:     99999,
+	}
+
+	err := validateParams(params, "list-vms")
+	if err == nil {
+		t.Fatal("expected error for invalid port")
+	}
+}
+
+// Executor Tests
+
 func TestNewExecutor(t *testing.T) {
 	params := &config.Params{
 		ESXiHostURI:      "192.168.1.100",
@@ -39,8 +124,7 @@ func TestExecutor_CloneVM_MissingSourceVM(t *testing.T) {
 
 	_ = NewExecutor(params, "clone-vm")
 
-	// We can't test Execute without actual SSH, but we can test parameter validation
-	// by checking the error would be caught in the operation method
+	// Parameter validation is tested here
 	if params.SourceVMName == "" && params.SourceVMID == "" {
 		t.Log("correctly identified missing source VM")
 	}
