@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/esxi-manager/esxi-manager/internal/common"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/interfaces/cli"
 )
 

@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/esxi-manager/esxi-manager/internal/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 )
 
 var (

@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/esxi-manager/esxi-manager/internal/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 )
 
 // ParseFlags Tests

@@ -4,6 +4,7 @@ package esxi
 // which register commands in the central registry
 
 import (
+	// Command package imports - triggers auto-registration via init()
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/host"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage"
