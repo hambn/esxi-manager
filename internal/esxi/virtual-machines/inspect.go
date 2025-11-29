@@ -525,26 +525,30 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 		return common.WrapError(err, "failed to get basic VM info")
 	}
 
-	// Parse all values from summary
-	parseConfigValue(output, "name =", &info.Name)
-	parseConfigValue(output, "state =", &info.State)
-	parseConfigValue(output, "config.annotation =", &info.Annotation)
-	parseConfigValue(output, "config.uuid =", &info.Uuid)
-	parseConfigValue(output, "uuid.bios =", &info.BiosUuid)
-	parseConfigValue(output, "guestFullName =", &info.GuestOS)
-	parseConfigValue(output, "toolsRunningStatus =", &info.ToolsRunning)
-	parseConfigValue(output, "toolsVersion =", &info.ToolsVersion)
-	parseConfigValue(output, "powerState =", &info.PowerState)
+	// Parse all values from summary with multiple fallback patterns
+	parseConfigValueFlexible(output, []string{"name =", "name="}, &info.Name)
+	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state="}, &info.State)
+	parseConfigValueFlexible(output, []string{"config.annotation =", "config.annotation=", "annotation ="}, &info.Annotation)
+	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid ="}, &info.Uuid)
+	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios ="}, &info.BiosUuid)
+	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname ="}, &info.GuestOS)
+	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus ="}, &info.ToolsRunning)
+	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version ="}, &info.ToolsVersion)
+	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState ="}, &info.PowerState)
 
-	// Get config file path
-	pathOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null | grep 'configFile' | head -1", vmID))
-	if err == nil && pathOutput != "" {
-		parseConfigValue(pathOutput, "configFile =", &info.ConfigPath)
+	// Get config file path - try from summary first, then from config
+	parseConfigValueFlexible(output, []string{"config.files.vmPathName =", "config.files.vmPathName="}, &info.ConfigPath)
+
+	if info.ConfigPath == "" {
+		configOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null", vmID))
+		if err == nil && configOutput != "" {
+			parseConfigValueFlexible(configOutput, []string{"configFile =", "configFile=", "config.files.vmPathName ="}, &info.ConfigPath)
+		}
 	}
 
-	// If we still don't have UUID, extract from the summary
+	// If we still don't have UUID, try alternate patterns
 	if info.Uuid == "" {
-		parseConfigValue(output, "uuid =", &info.Uuid)
+		parseConfigValueFlexible(output, []string{"uuid =", "uuid=", "config.uuid ="}, &info.Uuid)
 	}
 
 	return nil
@@ -552,50 +556,47 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 
 // getHardwareInfo retrieves hardware configuration
 func (i *InspectVM) getHardwareInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
-	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s | grep -E '(memoryMB|numCPU|version|firmware|bootDelay)'", vmID))
+	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get hardware info")
 	}
 
-	parseIntValue(output, "memoryMB =", &info.Memory)
-	parseIntValue(output, "numCPU =", &info.CPUs)
-	parseConfigValue(output, "version =", &info.Version)
-	parseConfigValue(output, "firmware =", &info.Firmware)
-	parseIntValue(output, "bootDelay =", &info.BootDelay)
+	parseIntValueFlexible(output, []string{"memoryMB =", "memoryMB=", "config.hardware.memoryMB ="}, &info.Memory)
+	parseIntValueFlexible(output, []string{"numCPU =", "numCPU=", "config.hardware.numCPU ="}, &info.CPUs)
+	parseConfigValueFlexible(output, []string{"version =", "version=", "config.version ="}, &info.Version)
+	parseConfigValueFlexible(output, []string{"firmware =", "firmware=", "config.hardware.firmware ="}, &info.Firmware)
+	parseIntValueFlexible(output, []string{"bootDelay =", "bootDelay=", "config.hardware.bootDelay ="}, &info.BootDelay)
 
 	// Get max resources
-	maxOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s | grep -E '(maxCpus|maxMemory)'", vmID))
-	if err == nil {
-		parseIntValue(maxOutput, "maxCpus =", &info.MaxCPUs)
-		parseIntValue(maxOutput, "maxMemory =", &info.MaxMemory)
-	}
+	parseIntValueFlexible(output, []string{"maxCpus =", "maxCpus=", "config.hardware.maxCpus ="}, &info.MaxCPUs)
+	parseIntValueFlexible(output, []string{"maxMemory =", "maxMemory=", "config.hardware.maxMemory ="}, &info.MaxMemory)
 
 	return nil
 }
 
 // getGuestInfo retrieves guest OS information
 func (i *InspectVM) getGuestInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
-	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s | grep -E '(guestFullName|toolsRunningStatus|toolsVersion)'", vmID))
+	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s 2>/dev/null", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get guest info")
 	}
 
-	parseConfigValue(output, "guestFullName =", &info.GuestOS)
-	parseConfigValue(output, "toolsRunningStatus =", &info.ToolsRunning)
-	parseConfigValue(output, "toolsVersion =", &info.ToolsVersion)
+	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname =", "config.guestFullName ="}, &info.GuestOS)
+	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus =", "guest.toolsRunningStatus ="}, &info.ToolsRunning)
+	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version =", "guest.toolsVersion ="}, &info.ToolsVersion)
 
 	return nil
 }
 
 // getRuntimeInfo retrieves runtime information
 func (i *InspectVM) getRuntimeInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
-	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s | grep -E '(runtime|numEthernetCards|numVirtualDisks)'", vmID))
+	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s 2>/dev/null", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get runtime info")
 	}
 
-	parseIntValue(output, "numEthernetCards =", &info.NICs)
-	parseIntValue(output, "numVirtualDisks =", &info.DiskCount)
+	parseIntValueFlexible(output, []string{"numEthernetCards =", "numEthernetCards=", "config.hardware.numEthernetCards ="}, &info.NICs)
+	parseIntValueFlexible(output, []string{"numVirtualDisks =", "numVirtualDisks=", "config.hardware.numVirtualDisks ="}, &info.DiskCount)
 
 	return nil
 }
@@ -845,31 +846,50 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 
 // Helper functions to parse vim-cmd output
 
-func parseConfigValue(output, key string, target *string) {
+// parseConfigValueFlexible tries multiple key patterns to find a value
+func parseConfigValueFlexible(output string, keys []string, target *string) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
-		if strings.Contains(line, key) {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				*target = strings.TrimSpace(strings.Trim(parts[1], "\",'"))
+		for _, key := range keys {
+			if strings.Contains(line, key) {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					value := strings.TrimSpace(strings.Trim(parts[1], "\",'"))
+					// Skip <unset> and other placeholder values
+					if value != "<unset>" && value != "(unset)" && value != "" {
+						*target = value
+						return // Found, stop searching
+					}
+				}
+				return // Found but empty/unset, stop searching
 			}
-			break
+		}
+	}
+}
+
+func parseConfigValue(output, key string, target *string) {
+	parseConfigValueFlexible(output, []string{key}, target)
+}
+
+// parseIntValueFlexible tries multiple key patterns to find an integer value
+func parseIntValueFlexible(output string, keys []string, target *int) {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		for _, key := range keys {
+			if strings.Contains(line, key) {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					value := strings.TrimSpace(parts[1])
+					fmt.Sscanf(value, "%d", target)
+				}
+				return // Found, stop searching
+			}
 		}
 	}
 }
 
 func parseIntValue(output, key string, target *int) {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, key) {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				value := strings.TrimSpace(parts[1])
-				fmt.Sscanf(value, "%d", target)
-			}
-			break
-		}
-	}
+	parseIntValueFlexible(output, []string{key}, target)
 }
 
 // parseSizeValue parses human-readable size (1K, 1M, 1G) to bytes
