@@ -86,7 +86,27 @@ func (i *InspectVM) Execute() error {
 		}
 	}
 
-	// Output as JSON
+	// Ensure all fields are properly initialized for JSON output
+	if info.Networks == nil {
+		info.Networks = []NetworkInfo{}
+	}
+	if info.Disks == nil {
+		info.Disks = []DiskInfo{}
+	}
+	if info.Datastores == nil {
+		info.Datastores = []DatastoreInfo{}
+	}
+	if info.Snapshots == nil {
+		info.Snapshots = []SnapshotInfo{}
+	}
+	if info.VMXConfig == nil {
+		info.VMXConfig = make(map[string]string)
+	}
+	if info.VMDKConfigs == nil {
+		info.VMDKConfigs = []VMDKInfo{}
+	}
+
+	// Output as JSON with all fields
 	jsonData, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return common.WrapError(err, "failed to marshal JSON")
@@ -120,26 +140,26 @@ func (i *InspectVM) resolveVMIDFromName(mgr *utils.SSHManager, vmName string) (s
 type InspectVMInfo struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
-	State         string         `json:"state,omitempty"`
+	State         string         `json:"state"`
 	PowerState    string         `json:"power_state"`
 	UUID          string         `json:"uuid"`
-	BiosUUID      string         `json:"bios_uuid,omitempty"`
-	ConfigPath    string         `json:"config_path,omitempty"`
-	Annotation    string         `json:"annotation,omitempty"`
-	CreateDate    string         `json:"create_date,omitempty"`
-	UpTime        string         `json:"up_time,omitempty"`
+	BiosUUID      string         `json:"bios_uuid"`
+	ConfigPath    string         `json:"config_path"`
+	Annotation    string         `json:"annotation"`
+	CreateDate    string         `json:"create_date"`
+	UpTime        string         `json:"up_time"`
 	Version       string         `json:"version"`
 	Firmware      string         `json:"firmware"`
-	GuestOS       string         `json:"guest_os,omitempty"`
+	GuestOS       string         `json:"guest_os"`
 	ToolsStatus   string         `json:"tools_status"`
-	ToolsVersion  string         `json:"tools_version,omitempty"`
+	ToolsVersion  string         `json:"tools_version"`
 	Hardware      HardwareInfo   `json:"hardware"`
-	Networks      []NetworkInfo  `json:"networks,omitempty"`
-	Disks         []DiskInfo     `json:"disks,omitempty"`
-	Datastores    []DatastoreInfo `json:"datastores,omitempty"`
-	Snapshots     []SnapshotInfo `json:"snapshots,omitempty"`
-	VMXConfig     map[string]string `json:"vmx_config,omitempty"`
-	VMDKConfigs   []VMDKInfo     `json:"vmdk_configs,omitempty"`
+	Networks      []NetworkInfo  `json:"networks"`
+	Disks         []DiskInfo     `json:"disks"`
+	Datastores    []DatastoreInfo `json:"datastores"`
+	Snapshots     []SnapshotInfo `json:"snapshots"`
+	VMXConfig     map[string]string `json:"vmx_config"`
+	VMDKConfigs   []VMDKInfo     `json:"vmdk_configs"`
 
 	// Legacy fields kept for backward compatibility (not exported to JSON)
 	Uuid           string      `json:"-"`
@@ -161,8 +181,8 @@ type InspectVMInfo struct {
 type HardwareInfo struct {
 	CPUs      int `json:"cpus"`
 	Memory    int `json:"memory_mb"`
-	MaxCPUs   int `json:"max_cpus,omitempty"`
-	MaxMemory int `json:"max_memory_mb,omitempty"`
+	MaxCPUs   int `json:"max_cpus"`
+	MaxMemory int `json:"max_memory_mb"`
 	BootDelay int `json:"boot_delay_ms"`
 }
 
@@ -170,8 +190,8 @@ type HardwareInfo struct {
 type NetworkInfo struct {
 	Index      int    `json:"index"`
 	Name       string `json:"name"`
-	MacAddress string `json:"mac_address,omitempty"`
-	Network    string `json:"network,omitempty"`
+	MacAddress string `json:"mac_address"`
+	Network    string `json:"network"`
 	Connected  bool   `json:"connected"`
 }
 
@@ -179,69 +199,69 @@ type NetworkInfo struct {
 type DiskInfo struct {
 	Index      int    `json:"index"`
 	Name       string `json:"name"`
-	Path       string `json:"path,omitempty"`
+	Path       string `json:"path"`
 	Size       int64  `json:"size_bytes"`
-	SizeGB     string `json:"size_gb,omitempty"`
-	Datastore  string `json:"datastore,omitempty"`
-	Controller string `json:"controller,omitempty"`
-	DeviceType string `json:"device_type,omitempty"`
-	Filename   string `json:"filename,omitempty"`
+	SizeGB     string `json:"size_gb"`
+	Datastore  string `json:"datastore"`
+	Controller string `json:"controller"`
+	DeviceType string `json:"device_type"`
+	Filename   string `json:"filename"`
 }
 
 // DatastoreInfo holds datastore information
 type DatastoreInfo struct {
-	Name       string `json:"name"`
-	Path       string `json:"path,omitempty"`
-	Capacity   int64  `json:"capacity_bytes"`
-	CapacityGB string `json:"capacity_gb,omitempty"`
-	FreeSpace  int64  `json:"free_space_bytes"`
-	FreeGB     string `json:"free_space_gb,omitempty"`
-	UsedSpace  int64  `json:"used_space_bytes"`
-	UsedGB     string `json:"used_space_gb,omitempty"`
-	Type       string `json:"type"`
-	URL        string `json:"url,omitempty"`
-	UsagePercent float64 `json:"usage_percent,omitempty"`
+	Name        string  `json:"name"`
+	Path        string  `json:"path"`
+	Capacity    int64   `json:"capacity_bytes"`
+	CapacityGB  string  `json:"capacity_gb"`
+	FreeSpace   int64   `json:"free_space_bytes"`
+	FreeGB      string  `json:"free_space_gb"`
+	UsedSpace   int64   `json:"used_space_bytes"`
+	UsedGB      string  `json:"used_space_gb"`
+	Type        string  `json:"type"`
+	URL         string  `json:"url"`
+	UsagePercent float64 `json:"usage_percent"`
 }
 
 // SnapshotInfo holds snapshot information
 type SnapshotInfo struct {
-	Key        string   `json:"key"`
-	Name       string   `json:"name"`
-	Description string  `json:"description,omitempty"`
-	CreateTime string   `json:"create_time,omitempty"`
-	State      string   `json:"state,omitempty"`
-	ParentKey  string   `json:"parent_key,omitempty"`
-	ChildKeys  []string `json:"child_keys,omitempty"`
-	Quiesced   bool     `json:"quiesced"`
-	BackupMode bool     `json:"backup_mode"`
-	Size       int64    `json:"size_bytes"`
-	SizeGB     string   `json:"size_gb,omitempty"`
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	CreateTime  string   `json:"create_time"`
+	State       string   `json:"state"`
+	ParentKey   string   `json:"parent_key"`
+	ChildKeys   []string `json:"child_keys"`
+	Quiesced    bool     `json:"quiesced"`
+	BackupMode  bool     `json:"backup_mode"`
+	Size        int64    `json:"size_bytes"`
+	SizeGB      string   `json:"size_gb"`
 }
 
 // CPUInfo holds CPU configuration
 type CPUInfo struct {
 	Cores   int    `json:"cores"`
 	Threads int    `json:"threads"`
-	HZ      string `json:"hz,omitempty"`
+	HZ      string `json:"hz"`
 }
 
 // VMDKInfo holds VMDK descriptor file information
 type VMDKInfo struct {
 	Filename        string            `json:"filename"`
-	Version         string            `json:"version,omitempty"`
-	Encoding        string            `json:"encoding,omitempty"`
-	CID             string            `json:"cid,omitempty"`
-	ParentCID       string            `json:"parent_cid,omitempty"`
-	CreateType      string            `json:"create_type,omitempty"`
-	Extents         []ExtentInfo      `json:"extents,omitempty"`
-	DDBParameters   map[string]string `json:"ddb_parameters,omitempty"`
+	Version         string            `json:"version"`
+	Encoding        string            `json:"encoding"`
+	CID             string            `json:"cid"`
+	ParentCID       string            `json:"parent_cid"`
+	CreateType      string            `json:"create_type"`
+	Extents         []ExtentInfo      `json:"extents"`
+	DDBParameters   map[string]string `json:"ddb_parameters"`
 	Capacity        int64             `json:"capacity_sectors"`
-	AdapterType     string            `json:"adapter_type,omitempty"`
-	Geometry        GeometryInfo      `json:"geometry,omitempty"`
+	AdapterType     string            `json:"adapter_type"`
+	Geometry        GeometryInfo      `json:"geometry"`
 	ThinProvisioned bool              `json:"thin_provisioned"`
-	UUID            string            `json:"uuid,omitempty"`
-	VirtualHWVer    string            `json:"virtual_hw_version,omitempty"`
-	LongContentID   string            `json:"long_content_id,omitempty"`
+	UUID            string            `json:"uuid"`
+	VirtualHWVer    string            `json:"virtual_hw_version"`
+	LongContentID   string            `json:"long_content_id"`
 }
 
 // ExtentInfo holds extent description information
@@ -409,13 +429,27 @@ func (i *InspectVM) parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) err
 		return fmt.Errorf("no config path available")
 	}
 
-	// Extract directory from config path
-	parts := strings.Split(info.ConfigPath, "/")
-	vmxPath := strings.Join(parts[:len(parts)-1], "/") + "/" + info.Name + ".vmx"
+	// Convert VMware format [datastore] path/to/file to actual path
+	vmxPath := convertVMwarePath(info.ConfigPath, mgr)
+	if vmxPath == "" {
+		// Try extracting directory from config path as fallback
+		parts := strings.Split(info.ConfigPath, "/")
+		vmxPath = strings.Join(parts[:len(parts)-1], "/") + "/" + info.Name + ".vmx"
+	}
 
 	output, err := mgr.RunCommand(fmt.Sprintf("cat '%s' 2>/dev/null", vmxPath))
 	if err != nil {
-		return common.WrapError(err, "failed to read VMX file")
+		// Try to find .vmx file using find command
+		findOutput, findErr := mgr.RunCommand(fmt.Sprintf("find /vmfs/volumes -name '%s.vmx' 2>/dev/null | head -1", info.Name))
+		if findErr == nil && strings.TrimSpace(findOutput) != "" {
+			vmxPath = strings.TrimSpace(findOutput)
+			output, err = mgr.RunCommand(fmt.Sprintf("cat '%s' 2>/dev/null", vmxPath))
+			if err != nil {
+				return common.WrapError(err, "failed to read VMX file")
+			}
+		} else {
+			return common.WrapError(err, "failed to read VMX file")
+		}
 	}
 
 	info.VMXPath = vmxPath
@@ -444,14 +478,22 @@ func (i *InspectVM) parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) e
 		return fmt.Errorf("no config path available")
 	}
 
+	// Convert VMware format to actual path
+	vmxPath := convertVMwarePath(info.ConfigPath, mgr)
+	if vmxPath == "" {
+		// Fallback: extract directory from config path
+		parts := strings.Split(info.ConfigPath, "/")
+		vmxPath = strings.Join(parts[:len(parts)-1], "/") + "/" + info.Name + ".vmx"
+	}
+
 	// Extract directory from config path
-	parts := strings.Split(info.ConfigPath, "/")
+	parts := strings.Split(vmxPath, "/")
 	vmxDir := strings.Join(parts[:len(parts)-1], "/")
 
 	// List VMDK files in VM directory
 	output, err := mgr.RunCommand(fmt.Sprintf("ls '%s'/*.vmdk 2>/dev/null | head -20", vmxDir))
 	if err != nil || output == "" {
-		return fmt.Errorf("no VMDK files found")
+		return fmt.Errorf("no VMDK files found in %s", vmxDir)
 	}
 
 	vmxFiles := strings.Split(strings.TrimSpace(output), "\n")
@@ -1005,6 +1047,31 @@ func matchesFieldAtStart(line, fieldName string) bool {
 	}
 
 	return true // Line is exactly the field name
+}
+
+// convertVMwarePath converts VMware format "[datastore] path/to/file" to actual filesystem path
+func convertVMwarePath(vmwarePath string, mgr *utils.SSHManager) string {
+	// Check if it's in VMware format
+	if !strings.HasPrefix(vmwarePath, "[") || !strings.Contains(vmwarePath, "]") {
+		return "" // Not in VMware format
+	}
+
+	// Extract datastore name: [datastore] -> datastore
+	endBracket := strings.Index(vmwarePath, "]")
+	if endBracket <= 1 {
+		return ""
+	}
+	datastoreName := vmwarePath[1:endBracket]
+	relativePath := strings.TrimSpace(vmwarePath[endBracket+1:])
+
+	// Get actual datastore path by searching /vmfs/volumes
+	output, err := mgr.RunCommand(fmt.Sprintf("ls -d /vmfs/volumes/* 2>/dev/null | grep -i '%s' | head -1", datastoreName))
+	if err != nil || strings.TrimSpace(output) == "" {
+		return ""
+	}
+
+	dsPath := strings.TrimSpace(output)
+	return dsPath + "/" + relativePath
 }
 
 // extractValue cleans up a value extracted from vim-cmd output
