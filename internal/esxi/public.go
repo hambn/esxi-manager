@@ -6,6 +6,7 @@ package esxi
 import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
 // Params is the unified parameter type for all ESXi operations
@@ -56,3 +57,35 @@ var WrapError = common.WrapError
 // Dispatch finds and instantiates a command by name
 // Re-exported from config package for cleaner imports
 var Dispatch = config.Dispatch
+
+// ValidateConnectionParams validates that all required connection parameters are set
+// Re-exported from utils package for cleaner imports
+var ValidateConnectionParams = utils.ValidateConnectionParams
+
+// ValidationError represents a parameter validation failure
+// Re-exported from common package for cleaner imports
+type ValidationError = common.ValidationError
+
+// ConnectionError represents a connection failure
+// Re-exported from common package for cleaner imports
+type ConnectionError = common.ConnectionError
+
+// NewValidationError creates a validation error with field context
+// Re-exported from common package for cleaner imports
+var NewValidationError = common.NewValidationError
+
+// NewValidationErrorWithValue creates a validation error with the invalid value shown
+// Re-exported from common package for cleaner imports
+var NewValidationErrorWithValue = common.NewValidationErrorWithValue
+
+// NewConnectionError creates a connection error with host context
+// Re-exported from common package for cleaner imports
+var NewConnectionError = common.NewConnectionError
+
+// IsValidationError checks if an error is a ValidationError
+// Re-exported from common package for cleaner imports
+var IsValidationError = common.IsValidationError
+
+// IsConnectionError checks if an error is a ConnectionError
+// Re-exported from common package for cleaner imports
+var IsConnectionError = common.IsConnectionError

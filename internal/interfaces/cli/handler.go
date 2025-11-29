@@ -59,13 +59,13 @@ func ParseFlags() (*esxi.Params, string, error) {
 	}
 
 	// Validate connection parameters
-	if err := params.ValidateConnection(); err != nil {
+	if err := esxi.ValidateConnectionParams(params); err != nil {
 		return nil, "", err
 	}
 
 	// Validate command is specified
 	if *commandName == "" {
-		return nil, "", fmt.Errorf("command is required")
+		return nil, "", esxi.NewValidationError("command", "is required")
 	}
 
 	return params, *commandName, nil

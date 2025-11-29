@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 )
 
@@ -15,6 +16,27 @@ var (
 	ErrNotConnected = errors.New("not connected to ESXi host")
 	ErrDialFailed   = errors.New("failed to establish SSH connection")
 )
+
+// ValidateConnectionParams validates that all required connection parameters are set
+// This should be called before attempting to create an SSHManager
+func ValidateConnectionParams(params *config.Params) error {
+	if params.ESXiHostURI == "" {
+		return common.NewValidationError("esxi-host-uri", "is required")
+	}
+	if params.ESXiHostUsername == "" {
+		return common.NewValidationError("esxi-host-username", "is required")
+	}
+	if params.ESXiHostPassword == "" {
+		return common.NewValidationError("esxi-host-password", "is required")
+	}
+	if params.ESXiHostPort <= 0 {
+		return common.NewValidationErrorWithValue("esxi-host-port", "must be greater than 0", fmt.Sprintf("%d", params.ESXiHostPort))
+	}
+	if params.ESXiHostPort > 65535 {
+		return common.NewValidationErrorWithValue("esxi-host-port", "must be less than or equal to 65535", fmt.Sprintf("%d", params.ESXiHostPort))
+	}
+	return nil
+}
 
 // SSHManager handles SSH connections with pooling and reconnection logic
 type SSHManager struct {
