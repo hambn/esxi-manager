@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"sync"
 )
 
@@ -83,4 +84,21 @@ func (p *Params) RegisterFlags() {
 
 	// Storage Operation Flags
 	flag.StringVar(&p.DatastoreName, "datastore-name", "", "Datastore name")
+}
+
+// ValidateConnection validates that all required connection parameters are set
+func (p *Params) ValidateConnection() error {
+	if p.ESXiHostURI == "" {
+		return fmt.Errorf("esxi-host-uri is required")
+	}
+	if p.ESXiHostUsername == "" {
+		return fmt.Errorf("esxi-host-username is required")
+	}
+	if p.ESXiHostPassword == "" {
+		return fmt.Errorf("esxi-host-password is required")
+	}
+	if p.ESXiHostPort <= 0 || p.ESXiHostPort > 65535 {
+		return fmt.Errorf("invalid port: %d", p.ESXiHostPort)
+	}
+	return nil
 }

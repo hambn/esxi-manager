@@ -47,68 +47,34 @@ NOTE: All flags must come BEFORE any positional arguments.
 // Returns: (params, commandName, error)
 func ParseFlags() (*esxi.Params, string, error) {
 	params := &esxi.Params{}
-
-	// Register all parameter flags from Params type
 	params.RegisterFlags()
 
-	// Command Selection
 	commandName := flag.String("command", "", "Command to execute (test-connection, get-version, list-vms, etc)")
-
 	flag.Parse()
 
-	// Validate positional arguments (should be none)
+	// Reject positional arguments
 	if flag.NArg() > 0 {
 		args := flag.Args()
 		return nil, "", fmt.Errorf("unexpected positional argument(s): %v\n\nHint: All flags (including --command) must come at the start, before any positional arguments.\nDid you put '%s' before your flags?", args, args[0])
 	}
 
-	// Validate all required parameters
-	if err := validateParams(params, *commandName); err != nil {
+	// Validate connection parameters
+	if err := params.ValidateConnection(); err != nil {
 		return nil, "", err
+	}
+
+	// Validate command is specified
+	if *commandName == "" {
+		return nil, "", fmt.Errorf("command is required")
 	}
 
 	return params, *commandName, nil
 }
 
-// validateParams checks that all required parameters are provided
-func validateParams(params *esxi.Params, commandName string) error {
-	// Connection parameters are required for all commands
-	if params.ESXiHostURI == "" {
-		return fmt.Errorf("esxi-host-uri is required")
-	}
-	if params.ESXiHostUsername == "" {
-		return fmt.Errorf("esxi-host-username is required")
-	}
-	if params.ESXiHostPassword == "" {
-		return fmt.Errorf("esxi-host-password is required")
-	}
-	if params.ESXiHostPort <= 0 || params.ESXiHostPort > 65535 {
-		return fmt.Errorf("invalid port: %d", params.ESXiHostPort)
-	}
-
-	// Command is required
-	if commandName == "" {
-		return fmt.Errorf("command is required")
-	}
-
-	return nil
-}
-
-// Executor handles CLI command execution
-type Executor struct {
-	params      *esxi.Params
-	commandName string
-}
-
-// NewExecutor creates a new CLI executor
-func NewExecutor(params *esxi.Params, commandName string) *Executor {
-	return &Executor{params: params, commandName: commandName}
-}
-
-// Execute dispatches and executes the command
-func (e *Executor) Execute() error {
-	// Dispatch command and get command instance
-	cmd, err := esxi.Dispatch(e.commandName, e.params)
+// Execute dispatches and executes the specified command
+func Execute(commandName string, params *esxi.Params) error {
+	// Dispatch command from registry
+	cmd, err := esxi.Dispatch(commandName, params)
 	if err != nil {
 		return esxi.WrapError(err, "failed to dispatch command")
 	}
@@ -118,7 +84,7 @@ func (e *Executor) Execute() error {
 		return esxi.WrapError(err, "command validation failed")
 	}
 
-	// Execute the command (command manages its own connections)
+	// Execute the command
 	if err := cmd.Execute(); err != nil {
 		return esxi.WrapError(err, "command execution failed")
 	}

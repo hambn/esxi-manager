@@ -16,9 +16,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create and execute CLI
-	executor := cli.NewExecutor(params, commandName)
-	if err := executor.Execute(); err != nil {
+	// Execute command
+	if err := cli.Execute(commandName, params); err != nil {
 		common.Error("execution failed", "error", err.Error(), "command", commandName)
 		os.Exit(1)
 	}
