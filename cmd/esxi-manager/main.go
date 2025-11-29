@@ -9,7 +9,7 @@ import (
 
 func main() {
 	// Parse CLI flags
-	params, err := cli.ParseFlags()
+	params, commandName, err := cli.ParseFlags()
 	if err != nil {
 		cli.PrintUsage()
 		common.Error("flag parsing failed", "error", err.Error())
@@ -17,9 +17,9 @@ func main() {
 	}
 
 	// Create and execute CLI
-	executor := cli.NewExecutor(params)
+	executor := cli.NewExecutor(params, commandName)
 	if err := executor.Execute(); err != nil {
-		common.Error("execution failed", "error", err.Error(), "command", params.Command)
+		common.Error("execution failed", "error", err.Error(), "command", commandName)
 		os.Exit(1)
 	}
 }

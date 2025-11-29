@@ -107,19 +107,19 @@ func (m *SSHManager) dial() (*ssh.Client, error) {
 	// Build authentication methods in order of preference
 	authMethods := []ssh.AuthMethod{
 		// Try password authentication first
-		ssh.Password(m.params.Password),
+		ssh.Password(m.params.ESXiHostPassword),
 		// Also try keyboard-interactive as fallback (many systems prefer this)
 		ssh.KeyboardInteractive(m.keyboardInteractiveChallenge),
 	}
 
 	config := &ssh.ClientConfig{
-		User:            m.params.Username,
+		User:            m.params.ESXiHostUsername,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ESXi hosts often have self-signed certs
 		Timeout:         10 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", m.params.URI, m.params.Port)
+	addr := fmt.Sprintf("%s:%d", m.params.ESXiHostURI, m.params.ESXiHostPort)
 	return ssh.Dial("tcp", addr, config)
 }
 
@@ -130,7 +130,7 @@ func (m *SSHManager) keyboardInteractiveChallenge(user, instruction string, ques
 	// This handles scenarios where the server asks for password via interactive challenge
 	answers := make([]string, len(questions))
 	for i := range answers {
-		answers[i] = m.params.Password
+		answers[i] = m.params.ESXiHostPassword
 	}
 	return answers, nil
 }

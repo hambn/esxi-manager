@@ -43,51 +43,21 @@ NOTE: All flags must come BEFORE any positional arguments.
 `)
 }
 
-// Params holds all CLI command parameters
-type Params struct {
-	// Connection parameters
-	ESXiHostURI      string
-	ESXiHostUsername string
-	ESXiHostPassword string
-	ESXiHostPort     int
+// ParseFlags parses command-line flags and returns config.Params
+// Uses config.Params directly - no duplicate CLI params type
+func ParseFlags() (*config.Params, string, error) {
+	params := &config.Params{}
 
-	// Command type
-	Command string
-
-	// VM operations
-	VMName           string
-	SourceVMName     string
-	SourceVMID       string
-	DestVMName       string
-	DestDiskStore    string
-	DestRAM          int
-	DestCPU          int
-	DestNetwork      string
-
-	// Network operations
-	VSwitchName      string
-	PortgroupName    string
-	VLAN             int
-	MTU              int
-
-	// Storage operations
-	DatastoreName string
-}
-
-// ParseFlags parses command-line flags and returns Params
-func ParseFlags() (*Params, error) {
-	params := &Params{}
-
-	// Connection flags
+	// ESXi Host Connection Flags
 	flag.StringVar(&params.ESXiHostURI, "esxi-host-uri", "", "ESXi host URI/IP address")
 	flag.StringVar(&params.ESXiHostUsername, "esxi-host-username", "", "ESXi host username")
 	flag.StringVar(&params.ESXiHostPassword, "esxi-host-password", "", "ESXi host password")
 	flag.IntVar(&params.ESXiHostPort, "esxi-host-port", 22, "ESXi host SSH port")
 
-	// Command selection
-	flag.StringVar(&params.Command, "command", "", "Command to execute (clone-vm, create-vm, delete-vm, list-vms, etc)")
+	// Command Selection
+	commandName := flag.String("command", "", "Command to execute (test-connection, get-version, list-vms, etc)")
 
-	// VM operation flags
+	// Virtual Machine Operation Flags
 	flag.StringVar(&params.VMName, "vm-name", "", "Virtual machine name")
 	flag.StringVar(&params.SourceVMName, "source-vm-name", "", "Source VM name for cloning")
 	flag.StringVar(&params.SourceVMID, "source-vm-id", "", "Source VM ID for cloning")
@@ -97,71 +67,51 @@ func ParseFlags() (*Params, error) {
 	flag.IntVar(&params.DestCPU, "dest-vm-cpu", 0, "Destination VM CPU count")
 	flag.StringVar(&params.DestNetwork, "dest-vm-network", "", "Destination VM network/portgroup")
 
-	// Network operation flags
+	// Network Operation Flags
 	flag.StringVar(&params.VSwitchName, "vswitch-name", "", "Virtual switch name")
 	flag.StringVar(&params.PortgroupName, "portgroup-name", "", "Port group name")
 	flag.IntVar(&params.VLAN, "vlan", 0, "VLAN ID")
 	flag.IntVar(&params.MTU, "mtu", 1500, "MTU size")
 
-	// Storage operation flags
+	// Storage Operation Flags
 	flag.StringVar(&params.DatastoreName, "datastore-name", "", "Datastore name")
 
 	flag.Parse()
 
-	// Check if there are positional arguments (means they were before flags)
+	// Check for positional arguments (which shouldn't exist)
 	if flag.NArg() > 0 {
 		args := flag.Args()
-		return nil, fmt.Errorf("unexpected positional argument(s): %v\n\nHint: All flags (including --command) must come at the start, before any positional arguments.\nDid you put '%s' before your flags?", args, args[0])
+		return nil, "", fmt.Errorf("unexpected positional argument(s): %v\n\nHint: All flags (including --command) must come at the start, before any positional arguments.\nDid you put '%s' before your flags?", args, args[0])
 	}
 
-	if err := params.Validate(); err != nil {
-		return nil, err
+	// Validate required parameters
+	if err := validateParams(params, *commandName); err != nil {
+		return nil, "", err
 	}
 
-	return params, nil
+	return params, *commandName, nil
 }
 
-// Validate validates the parameters
-func (p *Params) Validate() error {
-	if p.ESXiHostURI == "" {
+// validateParams checks that all required parameters are provided
+func validateParams(params *config.Params, commandName string) error {
+	// Connection parameters are required for all commands
+	if params.ESXiHostURI == "" {
 		return fmt.Errorf("esxi-host-uri is required")
 	}
-	if p.ESXiHostUsername == "" {
+	if params.ESXiHostUsername == "" {
 		return fmt.Errorf("esxi-host-username is required")
 	}
-	if p.ESXiHostPassword == "" {
+	if params.ESXiHostPassword == "" {
 		return fmt.Errorf("esxi-host-password is required")
 	}
-	if p.ESXiHostPort <= 0 || p.ESXiHostPort > 65535 {
-		return fmt.Errorf("invalid port: %d", p.ESXiHostPort)
+	if params.ESXiHostPort <= 0 || params.ESXiHostPort > 65535 {
+		return fmt.Errorf("invalid port: %d", params.ESXiHostPort)
 	}
-	if p.Command == "" {
+
+	// Command is required
+	if commandName == "" {
 		return fmt.Errorf("command is required")
 	}
-	return nil
-}
 
-// ToConfigParams converts CLI params to config.Params
-func (p *Params) ToConfigParams() *config.Params {
-	return &config.Params{
-		// Connection parameters
-		URI:      p.ESXiHostURI,
-		Username: p.ESXiHostUsername,
-		Password: p.ESXiHostPassword,
-		Port:     p.ESXiHostPort,
-		// Command parameters
-		VMName:        p.VMName,
-		SourceVMName:  p.SourceVMName,
-		SourceVMID:    p.SourceVMID,
-		DestVMName:    p.DestVMName,
-		DestDiskStore: p.DestDiskStore,
-		DestRAM:       p.DestRAM,
-		DestCPU:       p.DestCPU,
-		DestNetwork:   p.DestNetwork,
-		VSwitchName:   p.VSwitchName,
-		PortgroupName: p.PortgroupName,
-		VLAN:          p.VLAN,
-		MTU:           p.MTU,
-		DatastoreName: p.DatastoreName,
-	}
+	return nil
 }

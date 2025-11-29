@@ -2,15 +2,17 @@ package config
 
 import "sync"
 
-// Params holds all parameters - connection and command parameters unified
+// Params holds all application parameters - both connection and command parameters unified in one place
 type Params struct {
-	// Connection parameters
-	URI      string
-	Username string
-	Password string
-	Port     int
+	// ESXi Host Connection Parameters
+	// These are required for all commands to establish SSH connectivity
+	ESXiHostURI      string
+	ESXiHostUsername string
+	ESXiHostPassword string
+	ESXiHostPort     int
 
-	// Command parameters
+	// Virtual Machine Parameters
+	// Used by VM-related commands (clone, create, delete, list)
 	VMName        string
 	SourceVMName  string
 	SourceVMID    string
@@ -19,24 +21,33 @@ type Params struct {
 	DestRAM       int
 	DestCPU       int
 	DestNetwork   string
+
+	// Network Parameters
+	// Used by networking commands (vswitch, portgroup management)
 	VSwitchName   string
 	PortgroupName string
 	VLAN          int
 	MTU           int
 	Uplinks       []string
+
+	// Storage Parameters
+	// Used by storage commands (datastore operations)
 	DatastoreName string
 }
 
-// CommandInterface defines the contract all commands must implement
+// CommandInterface defines the contract that all commands must implement
+// Each command must be able to validate its specific parameters and execute its operation
 type CommandInterface interface {
 	Validate() error
 	Execute() error
 }
 
-// CommandFactory creates a command instance
+// CommandFactory is a factory function that creates a command instance
+// It receives the unified Params and returns a CommandInterface ready to execute
 type CommandFactory func(params *Params) CommandInterface
 
-// CommandRegistry manages registered commands
+// CommandRegistry manages all registered commands with thread-safe access
+// Commands auto-register themselves via init() functions in their packages
 type CommandRegistry struct {
 	mu       sync.RWMutex
 	commands map[string]CommandFactory
