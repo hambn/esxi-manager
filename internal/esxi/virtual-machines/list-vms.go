@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/config"
-	"github.com/esxi-manager/esxi-manager/internal/framework/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
@@ -188,7 +187,7 @@ func toInt64(s string) int64 {
 }
 
 func init() {
-	command.Register("list-vms", func(params command.Params, host *config.ESXiHost) command.Interface {
+	config.Register("list-vms", func(params config.CommandParams, host *config.ESXiHost) config.CommandInterface {
 		return &ListVMsCommand{host: host}
 	})
 }

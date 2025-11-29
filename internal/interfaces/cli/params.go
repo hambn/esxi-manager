@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/esxi-manager/esxi-manager/internal/config"
-	"github.com/esxi-manager/esxi-manager/internal/framework/command"
 )
 
 // PrintUsage prints the usage help text
@@ -44,8 +43,8 @@ NOTE: All flags must come BEFORE any positional arguments.
 `)
 }
 
-// CommandParams is an alias for command.Params
-type CommandParams = command.Params
+// CommandParams is an alias for config.CommandParams
+type CommandParams = config.CommandParams
 
 // Params holds all CLI command parameters
 type Params struct {
