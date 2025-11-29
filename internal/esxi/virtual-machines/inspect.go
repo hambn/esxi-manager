@@ -1,6 +1,7 @@
 package virtualmachines
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -28,7 +29,7 @@ func (i *InspectVM) Validate() error {
 	return nil
 }
 
-// Execute gathers and displays comprehensive VM information
+// Execute gathers and outputs comprehensive VM information as JSON
 func (i *InspectVM) Execute() error {
 	mgr, err := utils.NewSSHManager(i.params)
 	if err != nil {
@@ -56,8 +57,42 @@ func (i *InspectVM) Execute() error {
 		return err
 	}
 
-	// Display the information
-	i.displayVMInfo(info)
+	// Populate hardware info from legacy fields
+	info.Hardware = HardwareInfo{
+		CPUs:      info.CPUs,
+		Memory:    info.Memory,
+		MaxCPUs:   info.MaxCPUs,
+		MaxMemory: info.MaxMemory,
+		BootDelay: info.BootDelay,
+	}
+
+	// Reorganize network and storage data
+	if info.NICs > 0 && len(info.Networks) == 0 {
+		// Auto-generate network adapters if they weren't populated
+		for idx := 0; idx < info.NICs; idx++ {
+			info.Networks = append(info.Networks, NetworkInfo{
+				Index: idx,
+				Name:  fmt.Sprintf("Network adapter %d", idx+1),
+			})
+		}
+	}
+	if info.DiskCount > 0 && len(info.Disks) == 0 {
+		// Auto-generate disks if they weren't populated
+		for idx := 0; idx < info.DiskCount; idx++ {
+			info.Disks = append(info.Disks, DiskInfo{
+				Index: idx,
+				Name:  fmt.Sprintf("Hard disk %d", idx+1),
+			})
+		}
+	}
+
+	// Output as JSON
+	jsonData, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return common.WrapError(err, "failed to marshal JSON")
+	}
+
+	fmt.Println(string(jsonData))
 	return nil
 }
 
@@ -83,134 +118,154 @@ func (i *InspectVM) resolveVMIDFromName(mgr *utils.SSHManager, vmName string) (s
 
 // InspectVMInfo holds all gathered VM inspection information
 type InspectVMInfo struct {
-	ID             string
-	Name           string
-	State          string
-	Annotation     string
-	ConfigPath     string
-	Uuid           string
-	BiosUuid       string
-	Version        string
-	CPUs           int
-	Memory         int // in MB
-	NICs           int
-	DiskCount      int
-	MaxCPUs        int
-	MaxMemory      int
-	BootDelay      int
-	Firmware       string
-	GuestOS        string
-	ToolsRunning   string
-	ToolsVersion   string
-	CreateDate     string
-	PowerState     string
-	UpTime         string
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	State         string         `json:"state,omitempty"`
+	PowerState    string         `json:"power_state"`
+	UUID          string         `json:"uuid"`
+	BiosUUID      string         `json:"bios_uuid,omitempty"`
+	ConfigPath    string         `json:"config_path,omitempty"`
+	Annotation    string         `json:"annotation,omitempty"`
+	CreateDate    string         `json:"create_date,omitempty"`
+	UpTime        string         `json:"up_time,omitempty"`
+	Version       string         `json:"version"`
+	Firmware      string         `json:"firmware"`
+	GuestOS       string         `json:"guest_os,omitempty"`
+	ToolsStatus   string         `json:"tools_status"`
+	ToolsVersion  string         `json:"tools_version,omitempty"`
+	Hardware      HardwareInfo   `json:"hardware"`
+	Networks      []NetworkInfo  `json:"networks,omitempty"`
+	Disks         []DiskInfo     `json:"disks,omitempty"`
+	Datastores    []DatastoreInfo `json:"datastores,omitempty"`
+	Snapshots     []SnapshotInfo `json:"snapshots,omitempty"`
+	VMXConfig     map[string]string `json:"vmx_config,omitempty"`
+	VMDKConfigs   []VMDKInfo     `json:"vmdk_configs,omitempty"`
 
-	// Networks and Storage
-	Networks       []NetworkInfo
-	StorageDevices []DiskInfo
-	Datastores     []DatastoreInfo
-	Snapshots      []SnapshotInfo
-	CPUInfo        CPUInfo
+	// Legacy fields kept for backward compatibility (not exported to JSON)
+	Uuid           string      `json:"-"`
+	BiosUuid       string      `json:"-"`
+	CPUs           int         `json:"-"`
+	Memory         int         `json:"-"`
+	NICs           int         `json:"-"`
+	DiskCount      int         `json:"-"`
+	MaxCPUs        int         `json:"-"`
+	MaxMemory      int         `json:"-"`
+	BootDelay      int         `json:"-"`
+	ToolsRunning   string      `json:"-"`
+	VMXPath        string      `json:"-"`
+	CPUInfo        CPUInfo     `json:"-"`
+	StorageDevices []DiskInfo  `json:"-"`
+}
 
-	// VMX File Configuration
-	VMXConfig      map[string]string
-	VMXPath        string
-
-	// VMDK File Configuration
-	VMDKConfigs    []VMDKInfo
+// HardwareInfo contains hardware specifications
+type HardwareInfo struct {
+	CPUs      int `json:"cpus"`
+	Memory    int `json:"memory_mb"`
+	MaxCPUs   int `json:"max_cpus,omitempty"`
+	MaxMemory int `json:"max_memory_mb,omitempty"`
+	BootDelay int `json:"boot_delay_ms"`
 }
 
 // NetworkInfo holds NIC information
 type NetworkInfo struct {
-	Index      int
-	Name       string
-	MacAddress string
-	Network    string
-	Connected  bool
+	Index      int    `json:"index"`
+	Name       string `json:"name"`
+	MacAddress string `json:"mac_address,omitempty"`
+	Network    string `json:"network,omitempty"`
+	Connected  bool   `json:"connected"`
 }
 
 // DiskInfo holds disk information
 type DiskInfo struct {
-	Index      int
-	Name       string
-	Path       string
-	Size       int64 // in bytes
-	Datastore  string
-	Controller string
-	DeviceType string
-	Filename   string
+	Index      int    `json:"index"`
+	Name       string `json:"name"`
+	Path       string `json:"path,omitempty"`
+	Size       int64  `json:"size_bytes"`
+	SizeGB     string `json:"size_gb,omitempty"`
+	Datastore  string `json:"datastore,omitempty"`
+	Controller string `json:"controller,omitempty"`
+	DeviceType string `json:"device_type,omitempty"`
+	Filename   string `json:"filename,omitempty"`
 }
 
 // DatastoreInfo holds datastore information
 type DatastoreInfo struct {
-	Name       string
-	Path       string
-	Capacity   int64 // in bytes
-	FreeSpace  int64 // in bytes
-	UsedSpace  int64 // in bytes
-	Type       string
-	URL        string
+	Name       string `json:"name"`
+	Path       string `json:"path,omitempty"`
+	Capacity   int64  `json:"capacity_bytes"`
+	CapacityGB string `json:"capacity_gb,omitempty"`
+	FreeSpace  int64  `json:"free_space_bytes"`
+	FreeGB     string `json:"free_space_gb,omitempty"`
+	UsedSpace  int64  `json:"used_space_bytes"`
+	UsedGB     string `json:"used_space_gb,omitempty"`
+	Type       string `json:"type"`
+	URL        string `json:"url,omitempty"`
+	UsagePercent float64 `json:"usage_percent,omitempty"`
 }
 
 // SnapshotInfo holds snapshot information
 type SnapshotInfo struct {
-	Key        string
-	Name       string
-	Description string
-	CreateTime string
-	State      string
-	ParentKey  string
-	ChildKeys  []string
-	Quiesced   bool
-	BackupMode bool
-	Size       int64
+	Key        string   `json:"key"`
+	Name       string   `json:"name"`
+	Description string  `json:"description,omitempty"`
+	CreateTime string   `json:"create_time,omitempty"`
+	State      string   `json:"state,omitempty"`
+	ParentKey  string   `json:"parent_key,omitempty"`
+	ChildKeys  []string `json:"child_keys,omitempty"`
+	Quiesced   bool     `json:"quiesced"`
+	BackupMode bool     `json:"backup_mode"`
+	Size       int64    `json:"size_bytes"`
+	SizeGB     string   `json:"size_gb,omitempty"`
 }
 
 // CPUInfo holds CPU configuration
 type CPUInfo struct {
-	Cores   int
-	Threads int
-	HZ      string
+	Cores   int    `json:"cores"`
+	Threads int    `json:"threads"`
+	HZ      string `json:"hz,omitempty"`
 }
 
 // VMDKInfo holds VMDK descriptor file information
 type VMDKInfo struct {
-	Filename       string            // e.g., VM-DS-Oracle.vmdk
-	Version        string            // Descriptor file version
-	Encoding       string            // File encoding (UTF-8, etc)
-	CID            string            // Content ID
-	ParentCID      string            // Parent CID
-	CreateType     string            // vmfs, vmfsSparse, etc
-	Extents        []ExtentInfo      // Disk extents
-	DDBParameters  map[string]string // Database parameters
-	Capacity       int64             // Total capacity in sectors
-	AdapterType    string            // lsilogic, ide, buslogic, etc
-	Geometry       GeometryInfo      // Disk geometry
-	ThinProvisioned bool
-	UUID           string
-	VirtualHWVer   string
-	LongContentID  string
+	Filename        string            `json:"filename"`
+	Version         string            `json:"version,omitempty"`
+	Encoding        string            `json:"encoding,omitempty"`
+	CID             string            `json:"cid,omitempty"`
+	ParentCID       string            `json:"parent_cid,omitempty"`
+	CreateType      string            `json:"create_type,omitempty"`
+	Extents         []ExtentInfo      `json:"extents,omitempty"`
+	DDBParameters   map[string]string `json:"ddb_parameters,omitempty"`
+	Capacity        int64             `json:"capacity_sectors"`
+	AdapterType     string            `json:"adapter_type,omitempty"`
+	Geometry        GeometryInfo      `json:"geometry,omitempty"`
+	ThinProvisioned bool              `json:"thin_provisioned"`
+	UUID            string            `json:"uuid,omitempty"`
+	VirtualHWVer    string            `json:"virtual_hw_version,omitempty"`
+	LongContentID   string            `json:"long_content_id,omitempty"`
 }
 
 // ExtentInfo holds extent description information
 type ExtentInfo struct {
-	Access    string // RW, RDONLY
-	Sectors   int64
-	Type      string // FLAT, VMFS, SPARSE, ZERO
-	Filename  string
+	Access   string `json:"access"`
+	Sectors  int64  `json:"sectors"`
+	Type     string `json:"type"`
+	Filename string `json:"filename"`
 }
 
 // GeometryInfo holds disk geometry information
 type GeometryInfo struct {
-	Cylinders int
-	Heads     int
-	Sectors   int
+	Cylinders int `json:"cylinders"`
+	Heads     int `json:"heads"`
+	Sectors   int `json:"sectors"`
 }
 
 // gatherVMInfo collects comprehensive VM information
 func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVMInfo, error) {
-	info := &InspectVMInfo{ID: vmID, VMXConfig: make(map[string]string)}
+	info := &InspectVMInfo{
+		ID:        vmID,
+		VMXConfig: make(map[string]string),
+		Uuid:      "", // Will be populated by getBasicInfo
+	}
 
 	// Get basic info
 	if err := i.getBasicInfo(mgr, vmID, info); err != nil {
@@ -527,14 +582,23 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 
 	// Parse all values from summary with multiple fallback patterns
 	parseConfigValueFlexible(output, []string{"name =", "name="}, &info.Name)
-	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state=", "cpuHotAddEnabled =", "memoryHotAddEnabled ="}, &info.State)
+	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state="}, &info.State)
 	parseConfigValueFlexible(output, []string{"config.annotation =", "config.annotation=", "annotation =", "annotation="}, &info.Annotation)
-	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid =", "uuid="}, &info.Uuid)
-	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios =", "uuid ="}, &info.BiosUuid)
+
+	// UUID fields
+	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid =", "uuid="}, &info.UUID)
+	info.Uuid = info.UUID // Keep legacy field in sync
+	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios ="}, &info.BiosUUID)
+	info.BiosUuid = info.BiosUUID // Keep legacy field in sync
+
+	// Guest info
 	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname =", "guestOS =", "config.guestFullName ="}, &info.GuestOS)
-	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus =", "guest.toolsRunningStatus ="}, &info.ToolsRunning)
+	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus =", "guest.toolsRunningStatus ="}, &info.ToolsStatus)
+	info.ToolsRunning = info.ToolsStatus // Keep legacy field in sync
 	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version =", "guest.toolsVersion =", "guestToolsVersion ="}, &info.ToolsVersion)
-	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState =", "runtime.powerState ="}, &info.PowerState)
+
+	// Power state
+	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState ="}, &info.PowerState)
 
 	// Get config file path - try multiple approaches
 	parseConfigValueFlexible(output, []string{"config.files.vmPathName =", "config.files.vmPathName=", "vmPathName =", "vmPathName="}, &info.ConfigPath)
@@ -886,21 +950,21 @@ func parseConfigValueFlexible(output string, keys []string, target *string) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, "--") || strings.HasPrefix(line, "//") {
 			continue
 		}
 
 		for _, key := range keys {
-			keyLower := strings.ToLower(key)
-			lineLower := strings.ToLower(line)
+			// Extract field name from key (remove trailing separators)
+			fieldName := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(key), "="), ":")
 
-			// Check if this line contains our key
-			if strings.Contains(lineLower, strings.TrimSpace(keyLower)) {
+			// Check if line starts with this field name (with word boundary)
+			if matchesFieldAtStart(line, fieldName) {
 				// Try to extract value after = sign
 				if strings.Contains(line, "=") {
-					parts := strings.SplitN(line, "=", 2)
-					if len(parts) == 2 {
-						value := extractValue(parts[1])
+					idx := strings.Index(line, "=")
+					if idx >= 0 {
+						value := extractValue(line[idx+1:])
 						if value != "" && !isPlaceholderValue(value) {
 							*target = value
 							return // Found, stop searching
@@ -908,10 +972,10 @@ func parseConfigValueFlexible(output string, keys []string, target *string) {
 					}
 				}
 				// Try to extract value after : sign
-				if strings.Contains(line, ":") {
-					parts := strings.SplitN(line, ":", 2)
-					if len(parts) == 2 {
-						value := extractValue(parts[1])
+				if strings.Contains(line, ":") && !strings.Contains(line, "://") {
+					idx := strings.Index(line, ":")
+					if idx >= 0 {
+						value := extractValue(line[idx+1:])
 						if value != "" && !isPlaceholderValue(value) {
 							*target = value
 							return // Found, stop searching
@@ -924,16 +988,55 @@ func parseConfigValueFlexible(output string, keys []string, target *string) {
 	}
 }
 
+// matchesFieldAtStart checks if a line starts with a field name (respecting word boundaries)
+func matchesFieldAtStart(line, fieldName string) bool {
+	lineLower := strings.ToLower(line)
+	fieldLower := strings.ToLower(fieldName)
+
+	if !strings.HasPrefix(lineLower, fieldLower) {
+		return false
+	}
+
+	// Check for word boundary after field name
+	if len(lineLower) > len(fieldLower) {
+		nextChar := lineLower[len(fieldLower)]
+		// Valid boundaries: whitespace, =, :, .
+		return nextChar == ' ' || nextChar == '\t' || nextChar == '=' || nextChar == ':' || nextChar == '.'
+	}
+
+	return true // Line is exactly the field name
+}
+
 // extractValue cleans up a value extracted from vim-cmd output
 func extractValue(raw string) string {
-	// Remove leading/trailing whitespace and quotes
+	// Remove leading/trailing whitespace
 	value := strings.TrimSpace(raw)
-	value = strings.Trim(value, "\"'")
 
-	// Remove trailing commas (sometimes present in structured output)
-	value = strings.TrimSuffix(value, ",")
+	// Remove leading quotes
+	for strings.HasPrefix(value, "\"") || strings.HasPrefix(value, "'") {
+		value = value[1:]
+	}
+
+	// Remove trailing quotes and commas
+	for strings.HasSuffix(value, "\"") || strings.HasSuffix(value, "'") || strings.HasSuffix(value, ",") {
+		if strings.HasSuffix(value, "\"") {
+			value = strings.TrimSuffix(value, "\"")
+		} else if strings.HasSuffix(value, "'") {
+			value = strings.TrimSuffix(value, "'")
+		} else {
+			value = strings.TrimSuffix(value, ",")
+		}
+	}
+
+	// If the value starts and ends with matching quotes, remove them
+	value = strings.TrimSpace(value)
+	if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+		(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+		value = value[1 : len(value)-1]
+	}
 
 	// Clean up multiple spaces
+	value = strings.TrimSpace(value)
 	value = strings.Join(strings.Fields(value), " ")
 
 	return value
@@ -964,21 +1067,21 @@ func parseIntValueFlexible(output string, keys []string, target *int) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, "--") || strings.HasPrefix(line, "//") {
 			continue
 		}
 
 		for _, key := range keys {
-			keyLower := strings.ToLower(key)
-			lineLower := strings.ToLower(line)
+			// Extract field name from key (remove trailing separators)
+			fieldName := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(key), "="), ":")
 
-			// Check if this line contains our key
-			if strings.Contains(lineLower, strings.TrimSpace(keyLower)) {
+			// Check if line starts with this field name (with word boundary)
+			if matchesFieldAtStart(line, fieldName) {
 				// Try to extract value after = sign
 				if strings.Contains(line, "=") {
-					parts := strings.SplitN(line, "=", 2)
-					if len(parts) == 2 {
-						value := extractValue(parts[1])
+					idx := strings.Index(line, "=")
+					if idx >= 0 {
+						value := extractValue(line[idx+1:])
 						if value != "" {
 							fmt.Sscanf(value, "%d", target)
 							return // Found, stop searching
@@ -986,10 +1089,10 @@ func parseIntValueFlexible(output string, keys []string, target *int) {
 					}
 				}
 				// Try to extract value after : sign
-				if strings.Contains(line, ":") {
-					parts := strings.SplitN(line, ":", 2)
-					if len(parts) == 2 {
-						value := extractValue(parts[1])
+				if strings.Contains(line, ":") && !strings.Contains(line, "://") {
+					idx := strings.Index(line, ":")
+					if idx >= 0 {
+						value := extractValue(line[idx+1:])
 						if value != "" {
 							fmt.Sscanf(value, "%d", target)
 							return // Found, stop searching
