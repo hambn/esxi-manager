@@ -25,6 +25,11 @@ type Params struct {
 	DestCPU       int
 	DestNetwork   string
 
+	// VM Inspect Parameters
+	// Used by vm-inspect command to show all details about a specific VM
+	VMInspectID   string
+	VMInspectName string
+
 	// Network Parameters
 	// Used by networking commands (vswitch, portgroup management)
 	VSwitchName   string
@@ -74,6 +79,10 @@ func (p *Params) RegisterFlags() {
 	flag.IntVar(&p.DestRAM, "dest-vm-ram", 0, "Destination VM RAM in MB")
 	flag.IntVar(&p.DestCPU, "dest-vm-cpu", 0, "Destination VM CPU count")
 	flag.StringVar(&p.DestNetwork, "dest-vm-network", "", "Destination VM network/portgroup")
+
+	// VM Inspect Flags
+	flag.StringVar(&p.VMInspectID, "vm-inspect-id", "", "VM ID to inspect")
+	flag.StringVar(&p.VMInspectName, "vm-inspect-name", "", "VM name to inspect")
 
 	// Network Operation Flags
 	flag.StringVar(&p.VSwitchName, "vswitch-name", "", "Virtual switch name")
