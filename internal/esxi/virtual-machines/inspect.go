@@ -527,22 +527,30 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 
 	// Parse all values from summary with multiple fallback patterns
 	parseConfigValueFlexible(output, []string{"name =", "name="}, &info.Name)
-	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state="}, &info.State)
-	parseConfigValueFlexible(output, []string{"config.annotation =", "config.annotation=", "annotation ="}, &info.Annotation)
-	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid ="}, &info.Uuid)
-	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios ="}, &info.BiosUuid)
-	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname ="}, &info.GuestOS)
-	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus ="}, &info.ToolsRunning)
-	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version ="}, &info.ToolsVersion)
-	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState ="}, &info.PowerState)
+	parseConfigValueFlexible(output, []string{"state =", "state=", "config.name.state =", "config.name.state=", "cpuHotAddEnabled =", "memoryHotAddEnabled ="}, &info.State)
+	parseConfigValueFlexible(output, []string{"config.annotation =", "config.annotation=", "annotation =", "annotation="}, &info.Annotation)
+	parseConfigValueFlexible(output, []string{"config.uuid =", "config.uuid=", "uuid =", "uuid="}, &info.Uuid)
+	parseConfigValueFlexible(output, []string{"uuid.bios =", "uuid.bios=", "bios.uuid =", "config.uuid.bios =", "uuid ="}, &info.BiosUuid)
+	parseConfigValueFlexible(output, []string{"guestFullName =", "guestFullName=", "guest.fullname =", "guestOS =", "config.guestFullName ="}, &info.GuestOS)
+	parseConfigValueFlexible(output, []string{"toolsRunningStatus =", "toolsRunningStatus=", "tools.runningStatus =", "guest.toolsRunningStatus ="}, &info.ToolsRunning)
+	parseConfigValueFlexible(output, []string{"toolsVersion =", "toolsVersion=", "tools.version =", "guest.toolsVersion =", "guestToolsVersion ="}, &info.ToolsVersion)
+	parseConfigValueFlexible(output, []string{"powerState =", "powerState=", "runtime.powerState =", "runtime.powerState ="}, &info.PowerState)
 
-	// Get config file path - try from summary first, then from config
-	parseConfigValueFlexible(output, []string{"config.files.vmPathName =", "config.files.vmPathName="}, &info.ConfigPath)
+	// Get config file path - try multiple approaches
+	parseConfigValueFlexible(output, []string{"config.files.vmPathName =", "config.files.vmPathName=", "vmPathName =", "vmPathName="}, &info.ConfigPath)
 
 	if info.ConfigPath == "" {
 		configOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null", vmID))
 		if err == nil && configOutput != "" {
-			parseConfigValueFlexible(configOutput, []string{"configFile =", "configFile=", "config.files.vmPathName ="}, &info.ConfigPath)
+			parseConfigValueFlexible(configOutput, []string{"configFile =", "configFile=", "config.files.vmPathName =", "vmPathName =", "files.vmPathName =", "path ="}, &info.ConfigPath)
+		}
+	}
+
+	// Last resort: try to find .vmx file in /vmfs/volumes
+	if info.ConfigPath == "" && info.Name != "" {
+		searchOutput, err := mgr.RunCommand(fmt.Sprintf("find /vmfs/volumes -name '%s.vmx' 2>/dev/null | head -1", info.Name))
+		if err == nil && strings.TrimSpace(searchOutput) != "" {
+			info.ConfigPath = strings.TrimSpace(searchOutput)
 		}
 	}
 
@@ -638,14 +646,22 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 	fmt.Println(strings.Repeat("=", 80))
 
 	fmt.Println("\n[BASIC INFORMATION]")
-	fmt.Printf("  Name:                    %s\n", info.Name)
+	fmt.Printf("  Name:                    %s\n", formatFieldValue(info.Name))
 	fmt.Printf("  VM ID:                   %s\n", info.ID)
-	fmt.Printf("  State:                   %s\n", info.State)
-	fmt.Printf("  Power State:             %s\n", info.PowerState)
-	fmt.Printf("  UUID:                    %s\n", info.Uuid)
-	fmt.Printf("  BIOS UUID:               %s\n", info.BiosUuid)
-	fmt.Printf("  Config Path:             %s\n", info.ConfigPath)
-	fmt.Printf("  Annotation:              %s\n", info.Annotation)
+	if info.State != "" {
+		fmt.Printf("  State:                   %s\n", formatFieldValue(info.State))
+	}
+	fmt.Printf("  Power State:             %s\n", formatFieldValue(info.PowerState))
+	fmt.Printf("  UUID:                    %s\n", formatFieldValue(info.Uuid))
+	if info.BiosUuid != "" {
+		fmt.Printf("  BIOS UUID:               %s\n", formatFieldValue(info.BiosUuid))
+	}
+	if info.ConfigPath != "" {
+		fmt.Printf("  Config Path:             %s\n", formatFieldValue(info.ConfigPath))
+	}
+	if info.Annotation != "" {
+		fmt.Printf("  Annotation:              %s\n", formatFieldValue(info.Annotation))
+	}
 	if info.CreateDate != "" {
 		fmt.Printf("  Create Date:             %s\n", info.CreateDate)
 	}
@@ -667,9 +683,15 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 	}
 
 	fmt.Println("\n[GUEST INFORMATION]")
-	fmt.Printf("  Guest OS:                %s\n", info.GuestOS)
-	fmt.Printf("  VMware Tools Status:     %s\n", info.ToolsRunning)
-	fmt.Printf("  VMware Tools Version:    %s\n", info.ToolsVersion)
+	if info.GuestOS != "" && !isPlaceholderValue(info.GuestOS) {
+		fmt.Printf("  Guest OS:                %s\n", formatFieldValue(info.GuestOS))
+	} else {
+		fmt.Printf("  Guest OS:                N/A\n")
+	}
+	fmt.Printf("  VMware Tools Status:     %s\n", formatFieldValue(info.ToolsRunning))
+	if info.ToolsVersion != "" {
+		fmt.Printf("  VMware Tools Version:    %s\n", formatFieldValue(info.ToolsVersion))
+	}
 
 	fmt.Println("\n[NETWORK & STORAGE]")
 	fmt.Printf("  Network Adapters:        %d\n", info.NICs)
@@ -679,9 +701,15 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 		fmt.Println("\n[NETWORK ADAPTERS]")
 		for _, net := range info.Networks {
 			fmt.Printf("  %s:\n", net.Name)
-			fmt.Printf("    MAC Address:           %s\n", net.MacAddress)
-			fmt.Printf("    Network:               %s\n", net.Network)
-			fmt.Printf("    Connected:             %v\n", net.Connected)
+			if net.MacAddress != "" {
+				fmt.Printf("    MAC Address:           %s\n", formatFieldValue(net.MacAddress))
+			}
+			if net.Network != "" {
+				fmt.Printf("    Network:               %s\n", formatFieldValue(net.Network))
+			}
+			if net.Connected {
+				fmt.Printf("    Connected:             %v\n", net.Connected)
+			}
 		}
 	}
 
@@ -689,9 +717,15 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 		fmt.Println("\n[STORAGE DEVICES]")
 		for _, disk := range info.StorageDevices {
 			fmt.Printf("  %s:\n", disk.Path)
-			fmt.Printf("    Size:                  %d bytes\n", disk.Size)
-			fmt.Printf("    Datastore:             %s\n", disk.Datastore)
-			fmt.Printf("    Controller:            %s\n", disk.Controller)
+			if disk.Size > 0 {
+				fmt.Printf("    Size:                  %d bytes (%.2f GB)\n", disk.Size, float64(disk.Size)/(1024*1024*1024))
+			}
+			if disk.Datastore != "" {
+				fmt.Printf("    Datastore:             %s\n", formatFieldValue(disk.Datastore))
+			}
+			if disk.Controller != "" {
+				fmt.Printf("    Controller:            %s\n", formatFieldValue(disk.Controller))
+			}
 		}
 	}
 
@@ -855,8 +889,9 @@ func parseConfigValueFlexible(output string, keys []string, target *string) {
 				parts := strings.SplitN(line, "=", 2)
 				if len(parts) == 2 {
 					value := strings.TrimSpace(strings.Trim(parts[1], "\",'"))
-					// Skip <unset> and other placeholder values
-					if value != "<unset>" && value != "(unset)" && value != "" {
+					// Skip <unset>, (unset) and other placeholder values - check with and without quotes
+					value = strings.Trim(value, "\"'")
+					if !isPlaceholderValue(value) && value != "" {
 						*target = value
 						return // Found, stop searching
 					}
@@ -865,6 +900,22 @@ func parseConfigValueFlexible(output string, keys []string, target *string) {
 			}
 		}
 	}
+}
+
+// isPlaceholderValue checks if a value is a placeholder like <unset>
+func isPlaceholderValue(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "<unset>" || value == "(unset)" || value == "unset" ||
+	       value == "<unknown>" || value == "(unknown)" || value == "unknown"
+}
+
+// formatFieldValue formats a field value for display, handling quotes and placeholders
+func formatFieldValue(value string) string {
+	value = strings.Trim(value, "\"'")
+	if isPlaceholderValue(value) || value == "" {
+		return "N/A"
+	}
+	return value
 }
 
 func parseConfigValue(output, key string, target *string) {
