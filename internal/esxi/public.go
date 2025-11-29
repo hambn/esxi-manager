@@ -10,6 +10,7 @@ import (
 
 // Params is the unified parameter type for all ESXi operations
 // Re-exported from config package for cleaner imports
+// Use Params.RegisterFlags() to register all CLI flags
 type Params = config.Params
 
 // CommandInterface defines the contract for a command

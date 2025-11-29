@@ -1,6 +1,9 @@
 package config
 
-import "sync"
+import (
+	"flag"
+	"sync"
+)
 
 // Params holds all application parameters - both connection and command parameters unified in one place
 type Params struct {
@@ -51,4 +54,33 @@ type CommandFactory func(params *Params) CommandInterface
 type CommandRegistry struct {
 	mu       sync.RWMutex
 	commands map[string]CommandFactory
+}
+
+// RegisterFlags registers all parameter flags with the flag package
+// This centralizes all CLI flag definitions in one place
+func (p *Params) RegisterFlags() {
+	// ESXi Host Connection Flags
+	flag.StringVar(&p.ESXiHostURI, "esxi-host-uri", "", "ESXi host URI/IP address")
+	flag.StringVar(&p.ESXiHostUsername, "esxi-host-username", "", "ESXi host username")
+	flag.StringVar(&p.ESXiHostPassword, "esxi-host-password", "", "ESXi host password")
+	flag.IntVar(&p.ESXiHostPort, "esxi-host-port", 22, "ESXi host SSH port")
+
+	// Virtual Machine Operation Flags
+	flag.StringVar(&p.VMName, "vm-name", "", "Virtual machine name")
+	flag.StringVar(&p.SourceVMName, "source-vm-name", "", "Source VM name for cloning")
+	flag.StringVar(&p.SourceVMID, "source-vm-id", "", "Source VM ID for cloning")
+	flag.StringVar(&p.DestVMName, "dest-vm-name", "", "Destination VM name")
+	flag.StringVar(&p.DestDiskStore, "dest-vm-disk-store", "", "Destination datastore for VM")
+	flag.IntVar(&p.DestRAM, "dest-vm-ram", 0, "Destination VM RAM in MB")
+	flag.IntVar(&p.DestCPU, "dest-vm-cpu", 0, "Destination VM CPU count")
+	flag.StringVar(&p.DestNetwork, "dest-vm-network", "", "Destination VM network/portgroup")
+
+	// Network Operation Flags
+	flag.StringVar(&p.VSwitchName, "vswitch-name", "", "Virtual switch name")
+	flag.StringVar(&p.PortgroupName, "portgroup-name", "", "Port group name")
+	flag.IntVar(&p.VLAN, "vlan", 0, "VLAN ID")
+	flag.IntVar(&p.MTU, "mtu", 1500, "MTU size")
+
+	// Storage Operation Flags
+	flag.StringVar(&p.DatastoreName, "datastore-name", "", "Datastore name")
 }
