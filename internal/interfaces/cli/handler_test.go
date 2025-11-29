@@ -3,13 +3,13 @@ package cli
 import (
 	"testing"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi"
 )
 
 // ParseFlags Tests
 
 func TestValidateParams_Success(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -23,7 +23,7 @@ func TestValidateParams_Success(t *testing.T) {
 }
 
 func TestValidateParams_MissingURI(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
 		ESXiHostPort:     22,
@@ -36,7 +36,7 @@ func TestValidateParams_MissingURI(t *testing.T) {
 }
 
 func TestValidateParams_MissingUsername(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostPassword: "password",
 		ESXiHostPort:     22,
@@ -49,7 +49,7 @@ func TestValidateParams_MissingUsername(t *testing.T) {
 }
 
 func TestValidateParams_MissingPassword(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPort:     22,
@@ -62,7 +62,7 @@ func TestValidateParams_MissingPassword(t *testing.T) {
 }
 
 func TestValidateParams_MissingCommand(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -76,7 +76,7 @@ func TestValidateParams_MissingCommand(t *testing.T) {
 }
 
 func TestValidateParams_InvalidPort(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -92,7 +92,7 @@ func TestValidateParams_InvalidPort(t *testing.T) {
 // Executor Tests
 
 func TestNewExecutor(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -114,7 +114,7 @@ func TestNewExecutor(t *testing.T) {
 }
 
 func TestExecutor_CloneVM_MissingSourceVM(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -131,7 +131,7 @@ func TestExecutor_CloneVM_MissingSourceVM(t *testing.T) {
 }
 
 func TestExecutor_CloneVM_MissingDestVM(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -147,7 +147,7 @@ func TestExecutor_CloneVM_MissingDestVM(t *testing.T) {
 }
 
 func TestExecutor_CreateVM_MissingName(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -162,7 +162,7 @@ func TestExecutor_CreateVM_MissingName(t *testing.T) {
 }
 
 func TestExecutor_DeleteVM_MissingName(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
@@ -177,7 +177,7 @@ func TestExecutor_DeleteVM_MissingName(t *testing.T) {
 }
 
 func TestExecutor_UnknownCommand(t *testing.T) {
-	params := &config.Params{
+	params := &esxi.Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",

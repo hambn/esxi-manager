@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi"
+	"github.com/esxi-manager/esxi-manager/internal/esxi"
 )
 
 // PrintUsage prints the CLI usage help text
@@ -47,8 +45,8 @@ NOTE: All flags must come BEFORE any positional arguments.
 
 // ParseFlags parses command-line flags and returns parsed parameters
 // Returns: (params, commandName, error)
-func ParseFlags() (*config.Params, string, error) {
-	params := &config.Params{}
+func ParseFlags() (*esxi.Params, string, error) {
+	params := &esxi.Params{}
 
 	// ESXi Host Connection Flags
 	flag.StringVar(&params.ESXiHostURI, "esxi-host-uri", "", "ESXi host URI/IP address")
@@ -95,7 +93,7 @@ func ParseFlags() (*config.Params, string, error) {
 }
 
 // validateParams checks that all required parameters are provided
-func validateParams(params *config.Params, commandName string) error {
+func validateParams(params *esxi.Params, commandName string) error {
 	// Connection parameters are required for all commands
 	if params.ESXiHostURI == "" {
 		return fmt.Errorf("esxi-host-uri is required")
@@ -120,31 +118,31 @@ func validateParams(params *config.Params, commandName string) error {
 
 // Executor handles CLI command execution
 type Executor struct {
-	params      *config.Params
+	params      *esxi.Params
 	commandName string
 }
 
 // NewExecutor creates a new CLI executor
-func NewExecutor(params *config.Params, commandName string) *Executor {
+func NewExecutor(params *esxi.Params, commandName string) *Executor {
 	return &Executor{params: params, commandName: commandName}
 }
 
 // Execute dispatches and executes the command
 func (e *Executor) Execute() error {
 	// Dispatch command and get command instance
-	cmd, err := config.Dispatch(e.commandName, e.params)
+	cmd, err := esxi.Dispatch(e.commandName, e.params)
 	if err != nil {
-		return common.WrapError(err, "failed to dispatch command")
+		return esxi.WrapError(err, "failed to dispatch command")
 	}
 
 	// Validate command-specific parameters
 	if err := cmd.Validate(); err != nil {
-		return common.WrapError(err, "command validation failed")
+		return esxi.WrapError(err, "command validation failed")
 	}
 
 	// Execute the command (command manages its own connections)
 	if err := cmd.Execute(); err != nil {
-		return common.WrapError(err, "command execution failed")
+		return esxi.WrapError(err, "command execution failed")
 	}
 
 	return nil
