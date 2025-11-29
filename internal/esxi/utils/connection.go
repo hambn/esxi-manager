@@ -27,10 +27,6 @@ type SSHManager struct {
 
 // NewSSHManager creates a new SSH connection manager for an ESXi host
 func NewSSHManager(host *config.ESXiHost) (*SSHManager, error) {
-	if err := host.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid host configuration: %w", err)
-	}
-
 	return &SSHManager{
 		host:        host,
 		maxAttempts: 3,
