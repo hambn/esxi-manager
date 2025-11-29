@@ -185,13 +185,16 @@ type HardwareInfo struct {
 	MotherboardLayout string `json:"motherboard_layout,omitempty"`
 }
 
-// NetworkInfo holds NIC information
+// NetworkInfo holds NIC information with detailed vswitch/portgroup details
 type NetworkInfo struct {
-	Index      int    `json:"index"`
-	Name       string `json:"name"`
-	MacAddress string `json:"mac_address"`
-	Network    string `json:"network"`
-	Connected  bool   `json:"connected"`
+	Index         int    `json:"index"`
+	Name          string `json:"name"`
+	MacAddress    string `json:"mac_address"`
+	Network       string `json:"network"`
+	Connected     bool   `json:"connected"`
+	VSwitch       string `json:"vswitch,omitempty"`
+	VLANID        int    `json:"vlan_id,omitempty"`
+	ActiveClients int    `json:"active_clients,omitempty"`
 }
 
 // DiskInfo holds disk information
@@ -207,7 +210,7 @@ type DiskInfo struct {
 	Filename   string `json:"filename"`
 }
 
-// DatastoreInfo holds datastore information
+// DatastoreInfo holds datastore information with detailed VMFS/NFS metadata
 type DatastoreInfo struct {
 	Name         string  `json:"name"`
 	Path         string  `json:"path"`
@@ -218,8 +221,11 @@ type DatastoreInfo struct {
 	UsedSpace    int64   `json:"used_space_bytes"`
 	UsedGB       string  `json:"used_space_gb"`
 	Type         string  `json:"type"`
-	URL          string  `json:"url"`
+	Mounted      bool    `json:"mounted,omitempty"`
+	UUID         string  `json:"uuid,omitempty"`
+	MountPoint   string  `json:"mount_point,omitempty"`
 	UsagePercent float64 `json:"usage_percent"`
+	URL          string  `json:"url,omitempty"`
 }
 
 // SnapshotInfo holds snapshot information
@@ -313,6 +319,9 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 		}
 	}
 
+	// Phase 5b: Enrich network details with infrastructure info (vswitch, VLAN, active clients)
+	i.enrichNetworkDetailsWithInfrastructure(mgr, info)
+
 	// Phase 6: Get snapshots
 	if err := i.getSnapshots(mgr, vmID, info); err != nil {
 		common.Debug("get snapshots", "error", err.Error())
@@ -322,6 +331,9 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 	if err := i.getDatastores(mgr, vmID, info); err != nil {
 		common.Debug("get datastores", "error", err.Error())
 	}
+
+	// Phase 7b: Enrich datastore details with metadata (UUID, mount point, type)
+	i.enrichDatastoreDetailsWithMetadata(mgr, info)
 
 	// Phase 8: Populate hardware info
 	info.Hardware = HardwareInfo{
@@ -1144,6 +1156,132 @@ func parseSizeValue(sizeStr string, target *int64) {
 	}
 
 	*target = int64(size * float64(multiplier))
+}
+
+// enrichNetworkDetailsWithInfrastructure populates network info with vswitch and VLAN details
+func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
+	if len(info.Networks) == 0 {
+		return
+	}
+
+	// Get all port groups with esxcli
+	output, err := mgr.RunCommand("esxcli network vswitch standard portgroup list 2>/dev/null")
+	if err != nil || strings.TrimSpace(output) == "" {
+		common.Debug("enrich networks", "error", "failed to get portgroups from esxcli")
+		return
+	}
+
+	// Parse esxcli output - format: Name VSwitch ActiveClients VLANID
+	// Build a map of portgroup name to vswitch info
+	portgroupInfo := make(map[string]map[string]string)
+	lines := strings.Split(output, "\n")
+
+	// Skip header line
+	for idx, line := range lines {
+		if idx == 0 || strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+
+		pgName := fields[0]
+		vswitchName := fields[1]
+		activeClients := fields[2]
+		vlanID := fields[3]
+
+		portgroupInfo[pgName] = map[string]string{
+			"vswitch":       vswitchName,
+			"vlan":          vlanID,
+			"activeClients": activeClients,
+		}
+	}
+
+	// Enrich each network with infrastructure details
+	for idx, network := range info.Networks {
+		if pgInfo, ok := portgroupInfo[network.Network]; ok {
+			if vswitchName, ok := pgInfo["vswitch"]; ok {
+				info.Networks[idx].VSwitch = vswitchName
+			}
+			if vlanStr, ok := pgInfo["vlan"]; ok {
+				// Parse VLAN ID as integer
+				vlanID := 0
+				fmt.Sscanf(vlanStr, "%d", &vlanID)
+				if vlanID > 0 {
+					info.Networks[idx].VLANID = vlanID
+				}
+			}
+			if clientsStr, ok := pgInfo["activeClients"]; ok {
+				// Parse active clients as integer
+				clients := 0
+				fmt.Sscanf(clientsStr, "%d", &clients)
+				if clients > 0 {
+					info.Networks[idx].ActiveClients = clients
+				}
+			}
+		}
+	}
+}
+
+// enrichDatastoreDetailsWithMetadata populates datastore info with UUID and mount point details
+func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, info *InspectVMInfo) {
+	if len(info.Datastores) == 0 {
+		return
+	}
+
+	// Get all filesystem info with esxcli
+	output, err := mgr.RunCommand("esxcli storage filesystem list 2>/dev/null")
+	if err != nil || strings.TrimSpace(output) == "" {
+		common.Debug("enrich datastores", "error", "failed to get filesystems from esxcli")
+		return
+	}
+
+	// Parse esxcli output - format includes Mount Point and UUID
+	// Build a map of mount path to metadata
+	filesystemInfo := make(map[string]map[string]string)
+	lines := strings.Split(output, "\n")
+
+	var currentMount string
+	var currentUUID string
+	var currentType string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Mount Point:") {
+			currentMount = strings.TrimSpace(strings.TrimPrefix(line, "Mount Point:"))
+		} else if strings.HasPrefix(line, "UUID:") {
+			currentUUID = strings.TrimSpace(strings.TrimPrefix(line, "UUID:"))
+		} else if strings.HasPrefix(line, "Type:") {
+			currentType = strings.TrimSpace(strings.TrimPrefix(line, "Type:"))
+			if currentMount != "" && currentUUID != "" {
+				filesystemInfo[currentMount] = map[string]string{
+					"uuid": currentUUID,
+					"type": currentType,
+				}
+			}
+		}
+	}
+
+	// Enrich each datastore with metadata
+	for idx, ds := range info.Datastores {
+		// Try to match by mount path
+		if fsInfo, ok := filesystemInfo[ds.Path]; ok {
+			if uuid, ok := fsInfo["uuid"]; ok && uuid != "" {
+				info.Datastores[idx].UUID = uuid
+			}
+			info.Datastores[idx].Mounted = true
+			info.Datastores[idx].MountPoint = ds.Path
+			if fsType, ok := fsInfo["type"]; ok && fsType != "" {
+				info.Datastores[idx].Type = fsType
+			}
+		} else {
+			// Mark as mounted if path exists and is accessible
+			info.Datastores[idx].Mounted = true
+			info.Datastores[idx].MountPoint = ds.Path
+		}
+	}
 }
 
 // ============================================================================
