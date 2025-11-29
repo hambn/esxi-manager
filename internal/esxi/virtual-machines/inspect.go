@@ -89,6 +89,7 @@ type InspectVMInfo struct {
 	Annotation     string
 	ConfigPath     string
 	Uuid           string
+	BiosUuid       string
 	Version        string
 	CPUs           int
 	Memory         int // in MB
@@ -101,8 +102,15 @@ type InspectVMInfo struct {
 	GuestOS        string
 	ToolsRunning   string
 	ToolsVersion   string
+	CreateDate     string
+	PowerState     string
+	UpTime         string
+
+	// Networks and Storage
 	Networks       []NetworkInfo
 	StorageDevices []DiskInfo
+	Datastores     []DatastoreInfo
+	Snapshots      []SnapshotInfo
 	CPUInfo        CPUInfo
 
 	// VMX File Configuration
@@ -125,10 +133,38 @@ type NetworkInfo struct {
 // DiskInfo holds disk information
 type DiskInfo struct {
 	Index      int
+	Name       string
 	Path       string
 	Size       int64 // in bytes
 	Datastore  string
 	Controller string
+	DeviceType string
+	Filename   string
+}
+
+// DatastoreInfo holds datastore information
+type DatastoreInfo struct {
+	Name       string
+	Path       string
+	Capacity   int64 // in bytes
+	FreeSpace  int64 // in bytes
+	UsedSpace  int64 // in bytes
+	Type       string
+	URL        string
+}
+
+// SnapshotInfo holds snapshot information
+type SnapshotInfo struct {
+	Key        string
+	Name       string
+	Description string
+	CreateTime string
+	State      string
+	ParentKey  string
+	ChildKeys  []string
+	Quiesced   bool
+	BackupMode bool
+	Size       int64
 }
 
 // CPUInfo holds CPU configuration
@@ -218,7 +254,98 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 		common.Debug("parse VMDK files", "error", err.Error())
 	}
 
+	// Get snapshots
+	if err := i.getSnapshots(mgr, vmID, info); err != nil {
+		common.Debug("get snapshots", "error", err.Error())
+	}
+
+	// Get datastores
+	if err := i.getDatastores(mgr, vmID, info); err != nil {
+		common.Debug("get datastores", "error", err.Error())
+	}
+
 	return info, nil
+}
+
+// getSnapshots retrieves snapshot information
+func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/snapshot.get %s 2>/dev/null", vmID))
+	if err != nil || output == "" {
+		return fmt.Errorf("no snapshots or error getting snapshots")
+	}
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, "--") {
+			continue
+		}
+
+		// Parse snapshot lines
+		parts := strings.Split(line, "--")
+		if len(parts) >= 2 {
+			snapshot := SnapshotInfo{
+				Name: strings.TrimSpace(parts[0]),
+			}
+
+			// Extract details from the line
+			if strings.Contains(line, "state:") {
+				fields := strings.Fields(line)
+				for idx, field := range fields {
+					if field == "state:" && idx+1 < len(fields) {
+						snapshot.State = fields[idx+1]
+					}
+					if field == "size:" && idx+1 < len(fields) {
+						fmt.Sscanf(fields[idx+1], "%d", &snapshot.Size)
+					}
+				}
+			}
+
+			info.Snapshots = append(info.Snapshots, snapshot)
+		}
+	}
+
+	return nil
+}
+
+// getDatastores retrieves datastore information
+func (i *InspectVM) getDatastores(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+	// Get VM's config path to determine its datastore
+	if info.ConfigPath == "" {
+		return fmt.Errorf("no config path available")
+	}
+
+	// Extract datastore from config path (format: /vmfs/volumes/datastore-uuid/...)
+	parts := strings.Split(info.ConfigPath, "/")
+	if len(parts) > 3 {
+		datastorePath := parts[3]
+
+		output, err := mgr.RunCommand(fmt.Sprintf("ls -lh /vmfs/volumes/ 2>/dev/null | grep '%s'", datastorePath))
+		if err == nil && output != "" {
+			datastore := DatastoreInfo{
+				Path: "/vmfs/volumes/" + datastorePath,
+			}
+
+			// Try to get datastore info
+			infoOutput, err := mgr.RunCommand(fmt.Sprintf("df -h /vmfs/volumes/%s 2>/dev/null | tail -1", datastorePath))
+			if err == nil && infoOutput != "" {
+				fields := strings.Fields(infoOutput)
+				if len(fields) >= 5 {
+					datastore.Name = datastorePath
+					// Parse capacity and free space
+					parseSizeValue(fields[1], &datastore.Capacity)
+					parseSizeValue(fields[3], &datastore.FreeSpace)
+					if datastore.Capacity > 0 && datastore.FreeSpace > 0 {
+						datastore.UsedSpace = datastore.Capacity - datastore.FreeSpace
+					}
+					datastore.Type = "VMFS"
+					info.Datastores = append(info.Datastores, datastore)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // parseVMXFile reads and parses the .vmx configuration file
@@ -392,20 +519,32 @@ func (i *InspectVM) parseExtentLine(line string) ExtentInfo {
 
 // getBasicInfo retrieves basic VM information
 func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
-	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s | grep -E '(name|state|config.annotation|config.uuid)'", vmID))
+	// Get full summary output - no grep, we'll parse it all
+	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vmID))
 	if err != nil {
 		return common.WrapError(err, "failed to get basic VM info")
 	}
 
+	// Parse all values from summary
 	parseConfigValue(output, "name =", &info.Name)
 	parseConfigValue(output, "state =", &info.State)
 	parseConfigValue(output, "config.annotation =", &info.Annotation)
 	parseConfigValue(output, "config.uuid =", &info.Uuid)
+	parseConfigValue(output, "uuid.bios =", &info.BiosUuid)
+	parseConfigValue(output, "guestFullName =", &info.GuestOS)
+	parseConfigValue(output, "toolsRunningStatus =", &info.ToolsRunning)
+	parseConfigValue(output, "toolsVersion =", &info.ToolsVersion)
+	parseConfigValue(output, "powerState =", &info.PowerState)
 
-	// Get config path
-	pathOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s | grep 'configFile'", vmID))
-	if err == nil {
+	// Get config file path
+	pathOutput, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null | grep 'configFile' | head -1", vmID))
+	if err == nil && pathOutput != "" {
 		parseConfigValue(pathOutput, "configFile =", &info.ConfigPath)
+	}
+
+	// If we still don't have UUID, extract from the summary
+	if info.Uuid == "" {
+		parseConfigValue(output, "uuid =", &info.Uuid)
 	}
 
 	return nil
@@ -501,9 +640,17 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 	fmt.Printf("  Name:                    %s\n", info.Name)
 	fmt.Printf("  VM ID:                   %s\n", info.ID)
 	fmt.Printf("  State:                   %s\n", info.State)
+	fmt.Printf("  Power State:             %s\n", info.PowerState)
 	fmt.Printf("  UUID:                    %s\n", info.Uuid)
+	fmt.Printf("  BIOS UUID:               %s\n", info.BiosUuid)
 	fmt.Printf("  Config Path:             %s\n", info.ConfigPath)
 	fmt.Printf("  Annotation:              %s\n", info.Annotation)
+	if info.CreateDate != "" {
+		fmt.Printf("  Create Date:             %s\n", info.CreateDate)
+	}
+	if info.UpTime != "" {
+		fmt.Printf("  Up Time:                 %s\n", info.UpTime)
+	}
 
 	fmt.Println("\n[HARDWARE CONFIGURATION]")
 	fmt.Printf("  CPUs:                    %d cores\n", info.CPUs)
@@ -544,6 +691,45 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 			fmt.Printf("    Size:                  %d bytes\n", disk.Size)
 			fmt.Printf("    Datastore:             %s\n", disk.Datastore)
 			fmt.Printf("    Controller:            %s\n", disk.Controller)
+		}
+	}
+
+	// Display Datastores
+	if len(info.Datastores) > 0 {
+		fmt.Println("\n[DATASTORES]")
+		for idx, ds := range info.Datastores {
+			fmt.Printf("  Datastore %d: %s\n", idx+1, ds.Name)
+			fmt.Printf("    Path:                  %s\n", ds.Path)
+			fmt.Printf("    Type:                  %s\n", ds.Type)
+			fmt.Printf("    Capacity:              %d bytes (%.2f GB)\n", ds.Capacity, float64(ds.Capacity)/(1024*1024*1024))
+			fmt.Printf("    Used Space:            %d bytes (%.2f GB)\n", ds.UsedSpace, float64(ds.UsedSpace)/(1024*1024*1024))
+			fmt.Printf("    Free Space:            %d bytes (%.2f GB)\n", ds.FreeSpace, float64(ds.FreeSpace)/(1024*1024*1024))
+			if ds.Capacity > 0 {
+				usage := float64(ds.UsedSpace) / float64(ds.Capacity) * 100
+				fmt.Printf("    Usage:                 %.2f%%\n", usage)
+			}
+		}
+	}
+
+	// Display Snapshots
+	if len(info.Snapshots) > 0 {
+		fmt.Println("\n[SNAPSHOTS]")
+		for idx, snap := range info.Snapshots {
+			fmt.Printf("  Snapshot %d: %s\n", idx+1, snap.Name)
+			if snap.State != "" {
+				fmt.Printf("    State:                 %s\n", snap.State)
+			}
+			if snap.Description != "" {
+				fmt.Printf("    Description:           %s\n", snap.Description)
+			}
+			if snap.CreateTime != "" {
+				fmt.Printf("    Create Time:           %s\n", snap.CreateTime)
+			}
+			if snap.Size > 0 {
+				fmt.Printf("    Size:                  %d bytes (%.2f GB)\n", snap.Size, float64(snap.Size)/(1024*1024*1024))
+			}
+			fmt.Printf("    Quiesced:              %v\n", snap.Quiesced)
+			fmt.Printf("    Backup Mode:           %v\n", snap.BackupMode)
 		}
 	}
 
@@ -684,6 +870,32 @@ func parseIntValue(output, key string, target *int) {
 			break
 		}
 	}
+}
+
+// parseSizeValue parses human-readable size (1K, 1M, 1G) to bytes
+func parseSizeValue(sizeStr string, target *int64) {
+	sizeStr = strings.ToUpper(strings.TrimSpace(sizeStr))
+	var size float64
+	var multiplier int64 = 1
+
+	// Extract numeric part and unit
+	if strings.HasSuffix(sizeStr, "K") {
+		multiplier = 1024
+		fmt.Sscanf(sizeStr, "%f", &size)
+	} else if strings.HasSuffix(sizeStr, "M") {
+		multiplier = 1024 * 1024
+		fmt.Sscanf(sizeStr, "%f", &size)
+	} else if strings.HasSuffix(sizeStr, "G") {
+		multiplier = 1024 * 1024 * 1024
+		fmt.Sscanf(sizeStr, "%f", &size)
+	} else if strings.HasSuffix(sizeStr, "T") {
+		multiplier = 1024 * 1024 * 1024 * 1024
+		fmt.Sscanf(sizeStr, "%f", &size)
+	} else {
+		fmt.Sscanf(sizeStr, "%f", &size)
+	}
+
+	*target = int64(size * float64(multiplier))
 }
 
 // Register registers the inspect command
