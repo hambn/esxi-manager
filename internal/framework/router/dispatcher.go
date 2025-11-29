@@ -2,7 +2,7 @@ package router
 
 import (
 	"github.com/esxi-manager/esxi-manager/internal/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
+	"github.com/esxi-manager/esxi-manager/internal/framework/command"
 	// Import all command packages to trigger their init() functions
 	// which register commands in the central registry
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/host"

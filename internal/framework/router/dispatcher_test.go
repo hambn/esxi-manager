@@ -3,7 +3,7 @@ package router
 import (
 	"testing"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
+	"github.com/esxi-manager/esxi-manager/internal/framework/command"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/network"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/storage"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/vm"

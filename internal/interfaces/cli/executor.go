@@ -2,7 +2,7 @@ package cli
 
 import (
 	"github.com/esxi-manager/esxi-manager/internal/common"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/router"
+	"github.com/esxi-manager/esxi-manager/internal/framework/router"
 )
 
 // Executor handles CLI command execution

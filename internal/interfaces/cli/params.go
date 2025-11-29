@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/esxi-manager/esxi-manager/internal/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/command"
+	"github.com/esxi-manager/esxi-manager/internal/framework/command"
 )
 
 // PrintUsage prints the usage help text
