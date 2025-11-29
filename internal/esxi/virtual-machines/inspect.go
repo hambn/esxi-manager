@@ -324,6 +324,13 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 		common.Debug("parse VMX file", "error", err.Error())
 	}
 
+	// Extract network details from VMX config
+	if len(info.VMXConfig) > 0 {
+		i.extractNetworkDetailsFromVMX(info)
+		i.extractDiskDetailsFromVMX(info)
+		i.extractGuestOSFromVMX(info)
+	}
+
 	// Parse VMDK files for disk information
 	if err := i.parseVMDKFiles(mgr, info); err != nil {
 		common.Debug("parse VMDK files", "error", err.Error())
@@ -346,8 +353,13 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/snapshot.get %s 2>/dev/null", vmID))
 	if err != nil || output == "" {
-		return fmt.Errorf("no snapshots or error getting snapshots")
+		// No snapshots - this is not an error
+		info.Snapshots = nil
+		return nil
 	}
+
+	// Clear snapshots array
+	info.Snapshots = nil
 
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -359,8 +371,13 @@ func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *Inspe
 		// Parse snapshot lines
 		parts := strings.Split(line, "--")
 		if len(parts) >= 2 {
+			snapshotName := strings.TrimSpace(parts[0])
+			if snapshotName == "" {
+				continue // Skip empty snapshot names
+			}
+
 			snapshot := SnapshotInfo{
-				Name: strings.TrimSpace(parts[0]),
+				Name: snapshotName,
 			}
 
 			// Extract details from the line
@@ -383,41 +400,96 @@ func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *Inspe
 	return nil
 }
 
-// getDatastores retrieves datastore information
+// getDatastores retrieves datastore information from disk file paths
 func (i *InspectVM) getDatastores(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
-	// Get VM's config path to determine its datastore
-	if info.ConfigPath == "" {
-		return fmt.Errorf("no config path available")
-	}
+	// Collect unique datastores from disk paths
+	seenDatastores := make(map[string]bool)
+	var datastorePaths []string
 
-	// Extract datastore from config path (format: /vmfs/volumes/datastore-uuid/...)
-	parts := strings.Split(info.ConfigPath, "/")
-	if len(parts) > 3 {
-		datastorePath := parts[3]
-
-		output, err := mgr.RunCommand(fmt.Sprintf("ls -lh /vmfs/volumes/ 2>/dev/null | grep '%s'", datastorePath))
-		if err == nil && output != "" {
-			datastore := DatastoreInfo{
-				Path: "/vmfs/volumes/" + datastorePath,
-			}
-
-			// Try to get datastore info
-			infoOutput, err := mgr.RunCommand(fmt.Sprintf("df -h /vmfs/volumes/%s 2>/dev/null | tail -1", datastorePath))
-			if err == nil && infoOutput != "" {
-				fields := strings.Fields(infoOutput)
-				if len(fields) >= 5 {
-					datastore.Name = datastorePath
-					// Parse capacity and free space
-					parseSizeValue(fields[1], &datastore.Capacity)
-					parseSizeValue(fields[3], &datastore.FreeSpace)
-					if datastore.Capacity > 0 && datastore.FreeSpace > 0 {
-						datastore.UsedSpace = datastore.Capacity - datastore.FreeSpace
-					}
-					datastore.Type = "VMFS"
-					info.Datastores = append(info.Datastores, datastore)
+	// Extract datastore paths from disk filenames
+	for _, disk := range info.Disks {
+		if disk.Path != "" {
+			// Parse path to extract datastore UUID
+			parts := strings.Split(disk.Path, "/")
+			if strings.HasPrefix(disk.Path, "/vmfs/volumes/") && len(parts) > 3 {
+				// Format: /vmfs/volumes/uuid/path/to/file
+				datastoreUUID := parts[3]
+				if !seenDatastores[datastoreUUID] {
+					seenDatastores[datastoreUUID] = true
+					datastorePaths = append(datastorePaths, "/vmfs/volumes/"+datastoreUUID)
 				}
 			}
 		}
+	}
+
+	// Also try to extract from config path if in VMware format
+	if info.ConfigPath != "" && strings.HasPrefix(info.ConfigPath, "[") {
+		// Extract from [datastore] path format using convertVMwarePath
+		fsPath := convertVMwarePath(info.ConfigPath, mgr)
+		if fsPath != "" {
+			parts := strings.Split(fsPath, "/")
+			if len(parts) > 3 {
+				datastoreUUID := parts[3]
+				if !seenDatastores[datastoreUUID] {
+					seenDatastores[datastoreUUID] = true
+					datastorePaths = append(datastorePaths, "/vmfs/volumes/"+datastoreUUID)
+				}
+			}
+		}
+	}
+
+	// Query each unique datastore for capacity information
+	seenCapacities := make(map[int64]bool)
+	for _, dsPath := range datastorePaths {
+		// Get datastore size info
+		dfOutput, err := mgr.RunCommand(fmt.Sprintf("df -h %s 2>/dev/null | tail -1", dsPath))
+		if err != nil || strings.TrimSpace(dfOutput) == "" {
+			continue
+		}
+
+		// Parse df output: filesystem total used available use%
+		fields := strings.Fields(dfOutput)
+		if len(fields) < 4 {
+			continue
+		}
+
+		// Extract datastore name from UUID
+		dsUUID := strings.TrimPrefix(dsPath, "/vmfs/volumes/")
+
+		datastore := DatastoreInfo{
+			Path: dsPath,
+			Name: dsUUID,
+			Type: "VMFS",
+		}
+
+		// Parse capacity, used, and free space
+		parseSizeValue(fields[1], &datastore.Capacity)
+		parseSizeValue(fields[2], &datastore.UsedSpace)
+		parseSizeValue(fields[3], &datastore.FreeSpace)
+
+		// Skip if we've already added a datastore with this capacity (likely a symlink/duplicate)
+		if seenCapacities[datastore.Capacity] {
+			continue
+		}
+		seenCapacities[datastore.Capacity] = true
+
+		// Calculate usage percentage
+		if datastore.Capacity > 0 {
+			datastore.UsagePercent = float64(datastore.UsedSpace) / float64(datastore.Capacity) * 100
+		}
+
+		// Convert to GB for convenience
+		if datastore.Capacity > 0 {
+			datastore.CapacityGB = fmt.Sprintf("%.2f GB", float64(datastore.Capacity)/1024/1024/1024)
+		}
+		if datastore.FreeSpace > 0 {
+			datastore.FreeGB = fmt.Sprintf("%.2f GB", float64(datastore.FreeSpace)/1024/1024/1024)
+		}
+		if datastore.UsedSpace > 0 {
+			datastore.UsedGB = fmt.Sprintf("%.2f GB", float64(datastore.UsedSpace)/1024/1024/1024)
+		}
+
+		info.Datastores = append(info.Datastores, datastore)
 	}
 
 	return nil
@@ -1047,6 +1119,142 @@ func matchesFieldAtStart(line, fieldName string) bool {
 	}
 
 	return true // Line is exactly the field name
+}
+
+// extractNetworkDetailsFromVMX extracts network adapter info from VMX config
+func (i *InspectVM) extractNetworkDetailsFromVMX(info *InspectVMInfo) {
+	// Clear existing networks from simple generation
+	info.Networks = nil
+
+	// Ethernet adapters are named ethernet0, ethernet1, etc.
+	for idx := 0; idx < 10; idx++ {
+		prefix := fmt.Sprintf("ethernet%d", idx)
+		presentKey := prefix + ".present"
+
+		// Check if this adapter is present
+		if present, exists := info.VMXConfig[presentKey]; !exists || present != "TRUE" {
+			continue
+		}
+
+		network := NetworkInfo{
+			Index: idx,
+			Name:  fmt.Sprintf("Network adapter %d", idx+1),
+		}
+
+		// Get MAC address
+		if mac, ok := info.VMXConfig[prefix+".generatedAddress"]; ok && mac != "" {
+			network.MacAddress = mac
+		}
+
+		// Get network name
+		if netName, ok := info.VMXConfig[prefix+".networkName"]; ok && netName != "" {
+			network.Network = netName
+		}
+
+		// For connected status, check if device has a backing
+		network.Connected = network.Network != ""
+
+		info.Networks = append(info.Networks, network)
+	}
+}
+
+// extractDiskDetailsFromVMX extracts disk info from VMX config
+func (i *InspectVM) extractDiskDetailsFromVMX(info *InspectVMInfo) {
+	// Clear existing disks from simple generation
+	info.Disks = nil
+
+	// Check SCSI controllers
+	for ctrl := 0; ctrl < 4; ctrl++ {
+		ctrlPrefix := fmt.Sprintf("scsi%d", ctrl)
+		ctrlPresentKey := ctrlPrefix + ".present"
+
+		if present, exists := info.VMXConfig[ctrlPresentKey]; !exists || present != "TRUE" {
+			continue
+		}
+
+		// Check for disks on this controller
+		for device := 0; device < 10; device++ {
+			deviceKey := fmt.Sprintf("%s:%d", ctrlPrefix, device)
+			fileKey := deviceKey + ".fileName"
+			presentKey := deviceKey + ".present"
+
+			if present, exists := info.VMXConfig[presentKey]; !exists || present != "TRUE" {
+				continue
+			}
+
+			disk := DiskInfo{
+				Index: len(info.Disks),
+				Name:  fmt.Sprintf("Hard disk %d", len(info.Disks)+1),
+			}
+
+			// Get filename
+			if filename, ok := info.VMXConfig[fileKey]; ok && filename != "" {
+				disk.Filename = filename
+				disk.Path = filename
+			}
+
+			// Get device type
+			if devType, ok := info.VMXConfig[deviceKey+".deviceType"]; ok && devType != "" {
+				disk.DeviceType = devType
+			}
+
+			// Set controller type
+			disk.Controller = ctrlPrefix
+
+			info.Disks = append(info.Disks, disk)
+		}
+	}
+
+	// Check SATA controllers
+	for ctrl := 0; ctrl < 4; ctrl++ {
+		ctrlPrefix := fmt.Sprintf("sata%d", ctrl)
+		ctrlPresentKey := ctrlPrefix + ".present"
+
+		if present, exists := info.VMXConfig[ctrlPresentKey]; !exists || present != "TRUE" {
+			continue
+		}
+
+		// Check for devices on this controller
+		for device := 0; device < 10; device++ {
+			deviceKey := fmt.Sprintf("%s:%d", ctrlPrefix, device)
+			fileKey := deviceKey + ".fileName"
+			presentKey := deviceKey + ".present"
+
+			if present, exists := info.VMXConfig[presentKey]; !exists || present != "TRUE" {
+				continue
+			}
+
+			disk := DiskInfo{
+				Index: len(info.Disks),
+				Name:  fmt.Sprintf("Device %d", len(info.Disks)+1),
+			}
+
+			// Get filename
+			if filename, ok := info.VMXConfig[fileKey]; ok && filename != "" {
+				disk.Filename = filename
+				disk.Path = filename
+			}
+
+			// Get device type
+			if devType, ok := info.VMXConfig[deviceKey+".deviceType"]; ok && devType != "" {
+				disk.DeviceType = devType
+			}
+
+			// Set controller type
+			disk.Controller = ctrlPrefix
+
+			info.Disks = append(info.Disks, disk)
+		}
+	}
+}
+
+// extractGuestOSFromVMX extracts guest OS from VMX config
+func (i *InspectVM) extractGuestOSFromVMX(info *InspectVMInfo) {
+	if info.GuestOS == "" {
+		if guestOS, ok := info.VMXConfig["guestOS"]; ok && guestOS != "" {
+			info.GuestOS = guestOS
+		}
+	}
 }
 
 // convertVMwarePath converts VMware format "[datastore] path/to/file" to actual filesystem path
