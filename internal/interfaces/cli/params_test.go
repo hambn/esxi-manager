@@ -4,27 +4,31 @@ import (
 	"testing"
 )
 
-func TestParams_ToESXiHost(t *testing.T) {
+func TestParams_ToConfigParams(t *testing.T) {
 	params := &Params{
 		ESXiHostURI:      "192.168.1.100",
 		ESXiHostUsername: "root",
 		ESXiHostPassword: "password",
 		ESXiHostPort:     22,
+		VMName:           "test-vm",
 	}
 
-	host := params.ToESXiHost()
+	configParams := params.ToConfigParams()
 
-	if host.URI != "192.168.1.100" {
-		t.Errorf("expected URI 192.168.1.100, got %s", host.URI)
+	if configParams.URI != "192.168.1.100" {
+		t.Errorf("expected URI 192.168.1.100, got %s", configParams.URI)
 	}
-	if host.Username != "root" {
-		t.Errorf("expected username root, got %s", host.Username)
+	if configParams.Username != "root" {
+		t.Errorf("expected username root, got %s", configParams.Username)
 	}
-	if host.Password != "password" {
-		t.Errorf("expected password password, got %s", host.Password)
+	if configParams.Password != "password" {
+		t.Errorf("expected password password, got %s", configParams.Password)
 	}
-	if host.Port != 22 {
-		t.Errorf("expected port 22, got %d", host.Port)
+	if configParams.Port != 22 {
+		t.Errorf("expected port 22, got %d", configParams.Port)
+	}
+	if configParams.VMName != "test-vm" {
+		t.Errorf("expected VMName test-vm, got %s", configParams.VMName)
 	}
 }
 

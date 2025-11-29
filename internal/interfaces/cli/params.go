@@ -43,9 +43,6 @@ NOTE: All flags must come BEFORE any positional arguments.
 `)
 }
 
-// CommandParams is an alias for config.CommandParams
-type CommandParams = config.CommandParams
-
 // Params holds all CLI command parameters
 type Params struct {
 	// Connection parameters
@@ -144,19 +141,15 @@ func (p *Params) Validate() error {
 	return nil
 }
 
-// ToESXiHost converts params to config.ESXiHost
-func (p *Params) ToESXiHost() *config.ESXiHost {
-	return &config.ESXiHost{
+// ToConfigParams converts CLI params to config.Params
+func (p *Params) ToConfigParams() *config.Params {
+	return &config.Params{
+		// Connection parameters
 		URI:      p.ESXiHostURI,
 		Username: p.ESXiHostUsername,
 		Password: p.ESXiHostPassword,
 		Port:     p.ESXiHostPort,
-	}
-}
-
-// ToCommandParams converts CLI params to command parameters
-func (p *Params) ToCommandParams() CommandParams {
-	return CommandParams{
+		// Command parameters
 		VMName:        p.VMName,
 		SourceVMName:  p.SourceVMName,
 		SourceVMID:    p.SourceVMID,

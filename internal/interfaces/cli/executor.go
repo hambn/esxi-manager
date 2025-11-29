@@ -23,10 +23,9 @@ func NewExecutor(params *Params) *Executor {
 
 // Execute executes the CLI command
 func (e *Executor) Execute() error {
-	host := e.params.ToESXiHost()
-	cmdParams := e.params.ToCommandParams()
+	params := e.params.ToConfigParams()
 
-	cmd, err := config.Dispatch(e.params.Command, cmdParams, host)
+	cmd, err := config.Dispatch(e.params.Command, params)
 	if err != nil {
 		return common.WrapError(err, "failed to dispatch command")
 	}

@@ -2,7 +2,7 @@ package config
 
 import "sync"
 
-// Params holds all parameters - unified connection and command parameters
+// Params holds all parameters - connection and command parameters unified
 type Params struct {
 	// Connection parameters
 	URI      string
@@ -27,32 +27,6 @@ type Params struct {
 	DatastoreName string
 }
 
-// ESXiHost extracts connection parameters from Params
-type ESXiHost struct {
-	URI      string
-	Username string
-	Password string
-	Port     int
-}
-
-// CommandParams extracts command-specific parameters from Params
-type CommandParams struct {
-	VMName        string
-	SourceVMName  string
-	SourceVMID    string
-	DestVMName    string
-	DestDiskStore string
-	DestRAM       int
-	DestCPU       int
-	DestNetwork   string
-	VSwitchName   string
-	PortgroupName string
-	VLAN          int
-	MTU           int
-	Uplinks       []string
-	DatastoreName string
-}
-
 // CommandInterface defines the contract all commands must implement
 type CommandInterface interface {
 	Validate() error
@@ -60,7 +34,7 @@ type CommandInterface interface {
 }
 
 // CommandFactory creates a command instance
-type CommandFactory func(params CommandParams, host *ESXiHost) CommandInterface
+type CommandFactory func(params *Params) CommandInterface
 
 // CommandRegistry manages registered commands
 type CommandRegistry struct {

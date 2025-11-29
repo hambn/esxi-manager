@@ -19,7 +19,7 @@ type Datastore struct {
 }
 
 type ListDatastoresCommand struct {
-	host *config.ESXiHost
+	params *config.Params
 }
 
 func (c *ListDatastoresCommand) Validate() error {
@@ -27,7 +27,7 @@ func (c *ListDatastoresCommand) Validate() error {
 }
 
 func (c *ListDatastoresCommand) Execute() error {
-	manager, err := utils.NewSSHManager(c.host)
+	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH manager: %w", err)
 	}
@@ -102,7 +102,7 @@ func toInt64(s string) int64 {
 }
 
 func init() {
-	config.Register("list-datastores", func(params config.CommandParams, host *config.ESXiHost) config.CommandInterface {
-		return &ListDatastoresCommand{host: host}
+	config.Register("list-datastores", func(params *config.Params) config.CommandInterface {
+		return &ListDatastoresCommand{params: params}
 	})
 }

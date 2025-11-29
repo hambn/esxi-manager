@@ -14,7 +14,7 @@ func Register(name string, factory CommandFactory) {
 }
 
 // Dispatch retrieves and executes a command by name
-func Dispatch(name string, params CommandParams, host *ESXiHost) (CommandInterface, error) {
+func Dispatch(name string, params *Params) (CommandInterface, error) {
 	globalRegistry.mu.RLock()
 	factory, ok := globalRegistry.commands[name]
 	globalRegistry.mu.RUnlock()
@@ -23,5 +23,5 @@ func Dispatch(name string, params CommandParams, host *ESXiHost) (CommandInterfa
 		return nil, fmt.Errorf("unknown command: %s", name)
 	}
 
-	return factory(params, host), nil
+	return factory(params), nil
 }

@@ -8,7 +8,7 @@ import (
 )
 
 type ListPortGroupsCommand struct {
-	host *config.ESXiHost
+	params *config.Params
 }
 
 func (c *ListPortGroupsCommand) Validate() error {
@@ -16,7 +16,7 @@ func (c *ListPortGroupsCommand) Validate() error {
 }
 
 func (c *ListPortGroupsCommand) Execute() error {
-	manager, err := utils.NewSSHManager(c.host)
+	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH manager: %w", err)
 	}
@@ -32,7 +32,7 @@ func (c *ListPortGroupsCommand) Execute() error {
 }
 
 func init() {
-	config.Register("list-port-groups", func(params config.CommandParams, host *config.ESXiHost) config.CommandInterface {
-		return &ListPortGroupsCommand{host: host}
+	config.Register("list-port-groups", func(params *config.Params) config.CommandInterface {
+		return &ListPortGroupsCommand{params: params}
 	})
 }

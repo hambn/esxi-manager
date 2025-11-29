@@ -18,7 +18,7 @@ var (
 
 // SSHManager handles SSH connections with pooling and reconnection logic
 type SSHManager struct {
-	host        *config.ESXiHost
+	params      *config.Params
 	client      *ssh.Client
 	mu          sync.RWMutex
 	maxAttempts int
@@ -26,9 +26,9 @@ type SSHManager struct {
 }
 
 // NewSSHManager creates a new SSH connection manager for an ESXi host
-func NewSSHManager(host *config.ESXiHost) (*SSHManager, error) {
+func NewSSHManager(params *config.Params) (*SSHManager, error) {
 	return &SSHManager{
-		host:        host,
+		params:      params,
 		maxAttempts: 3,
 		retryDelay:  2 * time.Second,
 	}, nil
@@ -107,19 +107,19 @@ func (m *SSHManager) dial() (*ssh.Client, error) {
 	// Build authentication methods in order of preference
 	authMethods := []ssh.AuthMethod{
 		// Try password authentication first
-		ssh.Password(m.host.Password),
+		ssh.Password(m.params.Password),
 		// Also try keyboard-interactive as fallback (many systems prefer this)
 		ssh.KeyboardInteractive(m.keyboardInteractiveChallenge),
 	}
 
 	config := &ssh.ClientConfig{
-		User:            m.host.Username,
+		User:            m.params.Username,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ESXi hosts often have self-signed certs
 		Timeout:         10 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", m.host.URI, m.host.Port)
+	addr := fmt.Sprintf("%s:%d", m.params.URI, m.params.Port)
 	return ssh.Dial("tcp", addr, config)
 }
 
@@ -130,7 +130,7 @@ func (m *SSHManager) keyboardInteractiveChallenge(user, instruction string, ques
 	// This handles scenarios where the server asks for password via interactive challenge
 	answers := make([]string, len(questions))
 	for i := range answers {
-		answers[i] = m.host.Password
+		answers[i] = m.params.Password
 	}
 	return answers, nil
 }

@@ -8,7 +8,7 @@ import (
 )
 
 type GetVersionCommand struct {
-	host *config.ESXiHost
+	params *config.Params
 }
 
 func (c *GetVersionCommand) Validate() error {
@@ -16,7 +16,7 @@ func (c *GetVersionCommand) Validate() error {
 }
 
 func (c *GetVersionCommand) Execute() error {
-	manager, err := utils.NewSSHManager(c.host)
+	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH manager: %w", err)
 	}
@@ -32,7 +32,7 @@ func (c *GetVersionCommand) Execute() error {
 }
 
 func init() {
-	config.Register("get-version", func(params config.CommandParams, host *config.ESXiHost) config.CommandInterface {
-		return &GetVersionCommand{host: host}
+	config.Register("get-version", func(params *config.Params) config.CommandInterface {
+		return &GetVersionCommand{params: params}
 	})
 }
