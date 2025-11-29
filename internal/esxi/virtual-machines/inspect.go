@@ -104,6 +104,13 @@ type InspectVMInfo struct {
 	Networks       []NetworkInfo
 	StorageDevices []DiskInfo
 	CPUInfo        CPUInfo
+
+	// VMX File Configuration
+	VMXConfig      map[string]string
+	VMXPath        string
+
+	// VMDK File Configuration
+	VMDKConfigs    []VMDKInfo
 }
 
 // NetworkInfo holds NIC information
@@ -131,9 +138,43 @@ type CPUInfo struct {
 	HZ      string
 }
 
+// VMDKInfo holds VMDK descriptor file information
+type VMDKInfo struct {
+	Filename       string            // e.g., VM-DS-Oracle.vmdk
+	Version        string            // Descriptor file version
+	Encoding       string            // File encoding (UTF-8, etc)
+	CID            string            // Content ID
+	ParentCID      string            // Parent CID
+	CreateType     string            // vmfs, vmfsSparse, etc
+	Extents        []ExtentInfo      // Disk extents
+	DDBParameters  map[string]string // Database parameters
+	Capacity       int64             // Total capacity in sectors
+	AdapterType    string            // lsilogic, ide, buslogic, etc
+	Geometry       GeometryInfo      // Disk geometry
+	ThinProvisioned bool
+	UUID           string
+	VirtualHWVer   string
+	LongContentID  string
+}
+
+// ExtentInfo holds extent description information
+type ExtentInfo struct {
+	Access    string // RW, RDONLY
+	Sectors   int64
+	Type      string // FLAT, VMFS, SPARSE, ZERO
+	Filename  string
+}
+
+// GeometryInfo holds disk geometry information
+type GeometryInfo struct {
+	Cylinders int
+	Heads     int
+	Sectors   int
+}
+
 // gatherVMInfo collects comprehensive VM information
 func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVMInfo, error) {
-	info := &InspectVMInfo{ID: vmID}
+	info := &InspectVMInfo{ID: vmID, VMXConfig: make(map[string]string)}
 
 	// Get basic info
 	if err := i.getBasicInfo(mgr, vmID, info); err != nil {
@@ -167,7 +208,186 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 		common.Debug("storage info", "error", err.Error())
 	}
 
+	// Parse VMX file for detailed configuration
+	if err := i.parseVMXFile(mgr, info); err != nil {
+		common.Debug("parse VMX file", "error", err.Error())
+	}
+
+	// Parse VMDK files for disk information
+	if err := i.parseVMDKFiles(mgr, info); err != nil {
+		common.Debug("parse VMDK files", "error", err.Error())
+	}
+
 	return info, nil
+}
+
+// parseVMXFile reads and parses the .vmx configuration file
+func (i *InspectVM) parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) error {
+	if info.ConfigPath == "" {
+		return fmt.Errorf("no config path available")
+	}
+
+	// Extract directory from config path
+	parts := strings.Split(info.ConfigPath, "/")
+	vmxPath := strings.Join(parts[:len(parts)-1], "/") + "/" + info.Name + ".vmx"
+
+	output, err := mgr.RunCommand(fmt.Sprintf("cat '%s' 2>/dev/null", vmxPath))
+	if err != nil {
+		return common.WrapError(err, "failed to read VMX file")
+	}
+
+	info.VMXPath = vmxPath
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(strings.Trim(parts[1], "\"' "))
+			info.VMXConfig[key] = val
+		}
+	}
+
+	return nil
+}
+
+// parseVMDKFiles reads and parses .vmdk descriptor files
+func (i *InspectVM) parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) error {
+	if info.ConfigPath == "" {
+		return fmt.Errorf("no config path available")
+	}
+
+	// Extract directory from config path
+	parts := strings.Split(info.ConfigPath, "/")
+	vmxDir := strings.Join(parts[:len(parts)-1], "/")
+
+	// List VMDK files in VM directory
+	output, err := mgr.RunCommand(fmt.Sprintf("ls '%s'/*.vmdk 2>/dev/null | head -20", vmxDir))
+	if err != nil || output == "" {
+		return fmt.Errorf("no VMDK files found")
+	}
+
+	vmxFiles := strings.Split(strings.TrimSpace(output), "\n")
+	for _, vmxFile := range vmxFiles {
+		vmxFile = strings.TrimSpace(vmxFile)
+		if vmxFile == "" {
+			continue
+		}
+
+		vmdk, err := i.parseVMDKFile(mgr, vmxFile)
+		if err != nil {
+			common.Debug("parse VMDK file", "file", vmxFile, "error", err.Error())
+			continue
+		}
+		info.VMDKConfigs = append(info.VMDKConfigs, vmdk)
+	}
+
+	return nil
+}
+
+// parseVMDKFile parses a single VMDK descriptor file
+func (i *InspectVM) parseVMDKFile(mgr *utils.SSHManager, vmxPath string) (VMDKInfo, error) {
+	vmdk := VMDKInfo{
+		Filename:      vmxPath,
+		DDBParameters: make(map[string]string),
+	}
+
+	output, err := mgr.RunCommand(fmt.Sprintf("cat '%s' 2>/dev/null", vmxPath))
+	if err != nil {
+		return vmdk, err
+	}
+
+	section := ""
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			if strings.Contains(line, "Extent") {
+				section = "extent"
+			} else if strings.Contains(line, "DDB") {
+				section = "ddb"
+			}
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(strings.Trim(parts[1], "\"' "))
+
+		// Parse extent descriptions
+		if section == "extent" && strings.Contains(key, "RW") || strings.Contains(key, "RDONLY") {
+			extent := i.parseExtentLine(line)
+			vmdk.Extents = append(vmdk.Extents, extent)
+			continue
+		}
+
+		// Parse basic properties
+		switch key {
+		case "version":
+			vmdk.Version = val
+		case "encoding":
+			vmdk.Encoding = val
+		case "CID":
+			vmdk.CID = val
+		case "parentCID":
+			vmdk.ParentCID = val
+		case "createType":
+			vmdk.CreateType = val
+		}
+
+		// Parse DDB parameters
+		if strings.HasPrefix(key, "ddb.") {
+			ddbKey := strings.TrimPrefix(key, "ddb.")
+			vmdk.DDBParameters[ddbKey] = val
+
+			// Extract specific DDB values
+			switch ddbKey {
+			case "adapterType":
+				vmdk.AdapterType = val
+			case "uuid":
+				vmdk.UUID = val
+			case "virtualHWVersion":
+				vmdk.VirtualHWVer = val
+			case "longContentID":
+				vmdk.LongContentID = val
+			case "thinProvisioned":
+				vmdk.ThinProvisioned = val == "1"
+			case "geometry.cylinders":
+				fmt.Sscanf(val, "%d", &vmdk.Geometry.Cylinders)
+			case "geometry.heads":
+				fmt.Sscanf(val, "%d", &vmdk.Geometry.Heads)
+			case "geometry.sectors":
+				fmt.Sscanf(val, "%d", &vmdk.Geometry.Sectors)
+			}
+		}
+	}
+
+	return vmdk, nil
+}
+
+// parseExtentLine parses an extent description line
+func (i *InspectVM) parseExtentLine(line string) ExtentInfo {
+	extent := ExtentInfo{}
+	fields := strings.Fields(line)
+
+	if len(fields) >= 4 {
+		extent.Access = fields[0]
+		fmt.Sscanf(fields[1], "%d", &extent.Sectors)
+		extent.Type = fields[2]
+		extent.Filename = strings.Trim(fields[3], "\"'")
+	}
+
+	return extent
 }
 
 // getBasicInfo retrieves basic VM information
@@ -324,6 +544,113 @@ func (i *InspectVM) displayVMInfo(info *InspectVMInfo) {
 			fmt.Printf("    Size:                  %d bytes\n", disk.Size)
 			fmt.Printf("    Datastore:             %s\n", disk.Datastore)
 			fmt.Printf("    Controller:            %s\n", disk.Controller)
+		}
+	}
+
+	// Display VMX Configuration
+	if len(info.VMXConfig) > 0 {
+		fmt.Println("\n" + strings.Repeat("=", 80))
+		fmt.Println("[VMX CONFIGURATION FILE]")
+		fmt.Printf("  File Path: %s\n\n", info.VMXPath)
+		fmt.Println("  Configuration Parameters:")
+		fmt.Println("  " + strings.Repeat("-", 76))
+
+		// Group and display VMX settings
+		categories := map[string][]string{
+			"Hardware": {"numvcpus", "memSize", "virtualHW.version", "cpuid.coresPerSocket"},
+			"Firmware": {"firmware", "uefi.secureBoot.enabled", "bios.bootOrder", "boot.bootDelay"},
+			"Displays": {"svga.present", "svga.autodetect", "svga.vramSize", "RemoteDisplay.maxConnections"},
+			"Disks": {"scsi0.present", "sata0.present", "scsi0:0.fileName", "sata0:0.fileName"},
+			"Networks": {"ethernet0.present", "ethernet0.virtualDev", "ethernet0.networkName", "ethernet0.generatedAddress"},
+			"USB": {"usb.present", "ehci.present"},
+			"VMTools": {"tools.upgrade.policy", "tools.syncTime", "toolScripts.afterPowerOn"},
+			"Power": {"powerType.powerOff", "powerType.suspend", "powerType.reset"},
+			"Scheduling": {"sched.cpu.units", "sched.cpu.affinity", "sched.cpu.latencySensitivity"},
+		}
+
+		displayedKeys := make(map[string]bool)
+
+		for category, keys := range categories {
+			hasKeys := false
+			for _, key := range keys {
+				if val, exists := info.VMXConfig[key]; exists {
+					if !hasKeys {
+						fmt.Printf("\n  %s:\n", category)
+						hasKeys = true
+					}
+					fmt.Printf("    %-45s = %s\n", key, val)
+					displayedKeys[key] = true
+				}
+			}
+		}
+
+		// Display remaining uncategorized settings
+		remaining := []string{}
+		for key := range info.VMXConfig {
+			if !displayedKeys[key] {
+				remaining = append(remaining, key)
+			}
+		}
+		if len(remaining) > 0 {
+			fmt.Printf("\n  Other Settings:\n")
+			for _, key := range remaining {
+				fmt.Printf("    %-45s = %s\n", key, info.VMXConfig[key])
+			}
+		}
+	}
+
+	// Display VMDK Information
+	if len(info.VMDKConfigs) > 0 {
+		fmt.Println("\n" + strings.Repeat("=", 80))
+		fmt.Println("[VIRTUAL DISK INFORMATION]")
+
+		for idx, vmdk := range info.VMDKConfigs {
+			fmt.Printf("\n  Disk %d: %s\n", idx+1, vmdk.Filename)
+			fmt.Println("  " + strings.Repeat("-", 76))
+
+			fmt.Printf("    Descriptor Information:\n")
+			fmt.Printf("      Version:               %s\n", vmdk.Version)
+			fmt.Printf("      Encoding:              %s\n", vmdk.Encoding)
+			fmt.Printf("      CID:                   %s\n", vmdk.CID)
+			fmt.Printf("      Parent CID:            %s\n", vmdk.ParentCID)
+			fmt.Printf("      Create Type:           %s\n", vmdk.CreateType)
+
+			if vmdk.UUID != "" {
+				fmt.Printf("      UUID:                  %s\n", vmdk.UUID)
+			}
+			if vmdk.LongContentID != "" {
+				fmt.Printf("      Long Content ID:       %s\n", vmdk.LongContentID)
+			}
+
+			fmt.Printf("\n    Storage Configuration:\n")
+			fmt.Printf("      Adapter Type:          %s\n", vmdk.AdapterType)
+			fmt.Printf("      Thin Provisioned:      %v\n", vmdk.ThinProvisioned)
+			fmt.Printf("      Virtual HW Version:    %s\n", vmdk.VirtualHWVer)
+
+			if vmdk.Geometry.Cylinders > 0 {
+				fmt.Printf("\n    Disk Geometry:\n")
+				fmt.Printf("      Cylinders:             %d\n", vmdk.Geometry.Cylinders)
+				fmt.Printf("      Heads:                 %d\n", vmdk.Geometry.Heads)
+				fmt.Printf("      Sectors:               %d\n", vmdk.Geometry.Sectors)
+			}
+
+			if len(vmdk.Extents) > 0 {
+				fmt.Printf("\n    Extents:\n")
+				for extIdx, extent := range vmdk.Extents {
+					fmt.Printf("      Extent %d:\n", extIdx+1)
+					fmt.Printf("        Access:            %s\n", extent.Access)
+					fmt.Printf("        Sectors:           %d\n", extent.Sectors)
+					fmt.Printf("        Type:              %s\n", extent.Type)
+					fmt.Printf("        Filename:          %s\n", extent.Filename)
+				}
+			}
+
+			if len(vmdk.DDBParameters) > 0 {
+				fmt.Printf("\n    Database Parameters (DDB):\n")
+				for key, val := range vmdk.DDBParameters {
+					fmt.Printf("      %-40s = %s\n", key, val)
+				}
+			}
 		}
 	}
 
