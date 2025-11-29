@@ -60,6 +60,9 @@ func (i *InspectVM) Execute() error {
 	if info.Networks == nil {
 		info.Networks = []NetworkInfo{}
 	}
+	if info.VSwitches == nil {
+		info.VSwitches = []VSwitchInfo{}
+	}
 	if info.Disks == nil {
 		info.Disks = []DiskInfo{}
 	}
@@ -153,6 +156,7 @@ type InspectVMInfo struct {
 
 	// Infrastructure
 	Networks    []NetworkInfo   `json:"networks"`
+	VSwitches   []VSwitchInfo   `json:"vswitches,omitempty"`
 	Disks       []DiskInfo      `json:"disks"`
 	Datastores  []DatastoreInfo `json:"datastores"`
 	Snapshots   []SnapshotInfo  `json:"snapshots,omitempty"`
@@ -185,16 +189,45 @@ type HardwareInfo struct {
 	MotherboardLayout string `json:"motherboard_layout,omitempty"`
 }
 
+// SecurityPolicy holds security settings for port groups and vswitches
+type SecurityPolicy struct {
+	AllowPromiscuous bool `json:"allow_promiscuous_mode,omitempty"`
+	AllowForgedTx    bool `json:"allow_forged_transmits,omitempty"`
+	AllowMACChanges  bool `json:"allow_mac_changes,omitempty"`
+}
+
+// NICTeamingPolicy holds NIC teaming/failover settings
+type NICTeamingPolicy struct {
+	NotifySwitches bool   `json:"notify_switches,omitempty"`
+	Policy         string `json:"policy,omitempty"`
+	ReversePolicy  bool   `json:"reverse_policy,omitempty"`
+	Failback       bool   `json:"failback,omitempty"`
+}
+
+// ShapingPolicy holds traffic shaping settings
+type ShapingPolicy struct {
+	Enabled           bool   `json:"enabled,omitempty"`
+	AverageBandwidth  int64  `json:"average_bandwidth,omitempty"`
+	PeakBandwidth     int64  `json:"peak_bandwidth,omitempty"`
+	BurstSize         int64  `json:"burst_size,omitempty"`
+}
+
 // NetworkInfo holds NIC information with detailed vswitch/portgroup details
 type NetworkInfo struct {
-	Index         int    `json:"index"`
-	Name          string `json:"name"`
-	MacAddress    string `json:"mac_address"`
-	Network       string `json:"network"`
-	Connected     bool   `json:"connected"`
-	VSwitch       string `json:"vswitch,omitempty"`
-	VLANID        int    `json:"vlan_id,omitempty"`
-	ActiveClients int    `json:"active_clients,omitempty"`
+	Index          int              `json:"index"`
+	Name           string           `json:"name"`
+	MacAddress     string           `json:"mac_address"`
+	Network        string           `json:"network"`
+	Connected      bool             `json:"connected"`
+	VSwitch        string           `json:"vswitch,omitempty"`
+	VLANID         int              `json:"vlan_id,omitempty"`
+	ActiveClients  int              `json:"active_clients,omitempty"`
+	Accessible     bool             `json:"accessible,omitempty"`
+	VMCount        int              `json:"vm_count,omitempty"`
+	ActivePorts    int              `json:"active_ports,omitempty"`
+	Security       *SecurityPolicy  `json:"security_policy,omitempty"`
+	NICTeaming     *NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
+	Shaping        *ShapingPolicy   `json:"shaping_policy,omitempty"`
 }
 
 // DiskInfo holds disk information
@@ -210,22 +243,46 @@ type DiskInfo struct {
 	Filename   string `json:"filename"`
 }
 
-// DatastoreInfo holds datastore information with detailed VMFS/NFS metadata
+// DatastoreInfo holds datastore information with comprehensive VMFS/NFS metadata
 type DatastoreInfo struct {
-	Name         string  `json:"name"`
-	Path         string  `json:"path"`
-	Capacity     int64   `json:"capacity_bytes"`
-	CapacityGB   string  `json:"capacity_gb"`
-	FreeSpace    int64   `json:"free_space_bytes"`
-	FreeGB       string  `json:"free_space_gb"`
-	UsedSpace    int64   `json:"used_space_bytes"`
-	UsedGB       string  `json:"used_space_gb"`
-	Type         string  `json:"type"`
-	Mounted      bool    `json:"mounted,omitempty"`
-	UUID         string  `json:"uuid,omitempty"`
-	MountPoint   string  `json:"mount_point,omitempty"`
-	UsagePercent float64 `json:"usage_percent"`
-	URL          string  `json:"url,omitempty"`
+	Name            string  `json:"name"`
+	Path            string  `json:"path"`
+	Type            string  `json:"type"`
+	Capacity        int64   `json:"capacity_bytes"`
+	CapacityGB      string  `json:"capacity_gb"`
+	FreeSpace       int64   `json:"free_space_bytes"`
+	FreeGB          string  `json:"free_space_gb"`
+	UsedSpace       int64   `json:"used_space_bytes"`
+	UsedGB          string  `json:"used_space_gb"`
+	UsagePercent    float64 `json:"usage_percent"`
+	UUID            string  `json:"uuid,omitempty"`
+	MountPoint      string  `json:"mount_point,omitempty"`
+	Version         string  `json:"version,omitempty"`
+	Local           bool    `json:"local,omitempty"`
+	BlockSize       string  `json:"block_size,omitempty"`
+	HostCount       int     `json:"host_count,omitempty"`
+	VMCount         int     `json:"vm_count,omitempty"`
+	Mounted         bool    `json:"mounted,omitempty"`
+	Accessible      bool    `json:"accessible,omitempty"`
+	Extents         []string `json:"extents,omitempty"`
+	URL             string  `json:"url,omitempty"`
+}
+
+// VSwitchInfo holds virtual switch information
+type VSwitchInfo struct {
+	Name           string            `json:"name"`
+	Type           string            `json:"type,omitempty"`
+	PortGroupCount int               `json:"port_group_count,omitempty"`
+	Uplinks        []string          `json:"uplinks,omitempty"`
+	MTU            int               `json:"mtu,omitempty"`
+	Ports          int               `json:"ports,omitempty"`
+	AvailablePorts int               `json:"available_ports,omitempty"`
+	LinkDiscovery  string            `json:"link_discovery,omitempty"`
+	AttachedVMs    int               `json:"attached_vms,omitempty"`
+	ActiveVMs      int               `json:"active_vms,omitempty"`
+	Security       *SecurityPolicy   `json:"security_policy,omitempty"`
+	NICTeaming     *NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
+	Shaping        *ShapingPolicy    `json:"shaping_policy,omitempty"`
 }
 
 // SnapshotInfo holds snapshot information
@@ -335,7 +392,10 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 	// Phase 7b: Enrich datastore details with metadata (UUID, mount point, type)
 	i.enrichDatastoreDetailsWithMetadata(mgr, info)
 
-	// Phase 8: Populate hardware info
+	// Phase 8: Enrich vswitch details from network vswitches
+	i.enrichVSwitchDetailsWithInfrastructure(mgr, info)
+
+	// Phase 9: Populate hardware info
 	info.Hardware = HardwareInfo{
 		CPUs:      info.CPUs,
 		Memory:    info.Memory,
@@ -1158,7 +1218,7 @@ func parseSizeValue(sizeStr string, target *int64) {
 	*target = int64(size * float64(multiplier))
 }
 
-// enrichNetworkDetailsWithInfrastructure populates network info with vswitch and VLAN details
+// enrichNetworkDetailsWithInfrastructure populates network info with comprehensive vswitch and portgroup details
 func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
 	if len(info.Networks) == 0 {
 		return
@@ -1202,30 +1262,80 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 	// Enrich each network with infrastructure details
 	for idx, network := range info.Networks {
 		if pgInfo, ok := portgroupInfo[network.Network]; ok {
+			// Basic info
 			if vswitchName, ok := pgInfo["vswitch"]; ok {
 				info.Networks[idx].VSwitch = vswitchName
 			}
 			if vlanStr, ok := pgInfo["vlan"]; ok {
-				// Parse VLAN ID as integer
 				vlanID := 0
 				fmt.Sscanf(vlanStr, "%d", &vlanID)
-				if vlanID > 0 {
+				if vlanID >= 0 {
 					info.Networks[idx].VLANID = vlanID
 				}
 			}
 			if clientsStr, ok := pgInfo["activeClients"]; ok {
-				// Parse active clients as integer
 				clients := 0
 				fmt.Sscanf(clientsStr, "%d", &clients)
 				if clients > 0 {
 					info.Networks[idx].ActiveClients = clients
+					info.Networks[idx].VMCount = clients
+				}
+			}
+
+			// Query detailed portgroup info
+			pgDetailCmd := fmt.Sprintf("esxcli network vswitch standard portgroup get -p '%s' 2>/dev/null", network.Network)
+			pgDetailOutput, _ := mgr.RunCommand(pgDetailCmd)
+
+			// Parse portgroup details
+			if pgDetailOutput != "" {
+				info.Networks[idx].Accessible = parsePortGroupDetail(pgDetailOutput, "Accessible") == "Yes"
+				vmCountStr := parsePortGroupDetail(pgDetailOutput, "Virtual machines")
+				fmt.Sscanf(vmCountStr, "%d", &info.Networks[idx].VMCount)
+
+				activePorts := 0
+				portsStr := parsePortGroupDetail(pgDetailOutput, "Active ports")
+				fmt.Sscanf(portsStr, "%d", &activePorts)
+				if activePorts > 0 {
+					info.Networks[idx].ActivePorts = activePorts
+				}
+			}
+
+			// Query security policy
+			securityCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy security get -p '%s' 2>/dev/null", network.Network)
+			secOutput, _ := mgr.RunCommand(securityCmd)
+			if secOutput != "" {
+				info.Networks[idx].Security = &SecurityPolicy{
+					AllowPromiscuous: parseBoolValue(parseSecurityPolicyField(secOutput, "Promiscuous")),
+					AllowForgedTx:    parseBoolValue(parseSecurityPolicyField(secOutput, "Forged")),
+					AllowMACChanges:  parseBoolValue(parseSecurityPolicyField(secOutput, "MAC")),
+				}
+			}
+
+			// Query NIC teaming policy
+			teamingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy failover get -p '%s' 2>/dev/null", network.Network)
+			teamOutput, _ := mgr.RunCommand(teamingCmd)
+			if teamOutput != "" {
+				info.Networks[idx].NICTeaming = &NICTeamingPolicy{
+					NotifySwitches: parseBoolValue(parseTeamingPolicyField(teamOutput, "Notify")),
+					Policy:         parseTeamingPolicyField(teamOutput, "Policy"),
+					ReversePolicy:  parseBoolValue(parseTeamingPolicyField(teamOutput, "Reverse")),
+					Failback:       parseBoolValue(parseTeamingPolicyField(teamOutput, "Failback")),
+				}
+			}
+
+			// Query shaping policy
+			shapingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy shaping get -p '%s' 2>/dev/null", network.Network)
+			shapOutput, _ := mgr.RunCommand(shapingCmd)
+			if shapOutput != "" {
+				info.Networks[idx].Shaping = &ShapingPolicy{
+					Enabled: parseBoolValue(parseShapingPolicyField(shapOutput, "Enabled")),
 				}
 			}
 		}
 	}
 }
 
-// enrichDatastoreDetailsWithMetadata populates datastore info with UUID and mount point details
+// enrichDatastoreDetailsWithMetadata populates datastore info with comprehensive metadata
 func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, info *InspectVMInfo) {
 	if len(info.Datastores) == 0 {
 		return
@@ -1238,7 +1348,7 @@ func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, in
 		return
 	}
 
-	// Parse esxcli output - format includes Mount Point and UUID
+	// Parse esxcli output - format includes Mount Point, UUID, Type, and more
 	// Build a map of mount path to metadata
 	filesystemInfo := make(map[string]map[string]string)
 	lines := strings.Split(output, "\n")
@@ -1261,25 +1371,324 @@ func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, in
 					"type": currentType,
 				}
 			}
+			// Reset for next entry
+			currentMount = ""
+			currentUUID = ""
+			currentType = ""
 		}
 	}
 
 	// Enrich each datastore with metadata
 	for idx, ds := range info.Datastores {
-		// Try to match by mount path
+		// Mark as mounted and set mount point
+		info.Datastores[idx].Mounted = true
+		info.Datastores[idx].MountPoint = ds.Path
+		info.Datastores[idx].Accessible = true
+
+		// Try to match by mount path and get detailed metadata
 		if fsInfo, ok := filesystemInfo[ds.Path]; ok {
 			if uuid, ok := fsInfo["uuid"]; ok && uuid != "" {
 				info.Datastores[idx].UUID = uuid
 			}
-			info.Datastores[idx].Mounted = true
-			info.Datastores[idx].MountPoint = ds.Path
 			if fsType, ok := fsInfo["type"]; ok && fsType != "" {
 				info.Datastores[idx].Type = fsType
 			}
-		} else {
-			// Mark as mounted if path exists and is accessible
-			info.Datastores[idx].Mounted = true
-			info.Datastores[idx].MountPoint = ds.Path
+		}
+
+		// Query detailed datastore info using esxcli
+		if ds.UUID != "" {
+			detailCmd := fmt.Sprintf("esxcli storage filesystem info -l '%s' 2>/dev/null", ds.UUID)
+			detailOutput, _ := mgr.RunCommand(detailCmd)
+
+			if detailOutput != "" {
+				// Parse detailed information
+				typeVal := parseDatastoreDetail(detailOutput, "Type")
+				if typeVal != "" && typeVal != "Unknown" {
+					info.Datastores[idx].Type = typeVal
+				}
+
+				version := parseDatastoreDetail(detailOutput, "Version")
+				if version != "" && version != "Unknown" {
+					info.Datastores[idx].Version = version
+				}
+
+				localVal := parseDatastoreDetail(detailOutput, "Local")
+				if localVal == "Yes" || localVal == "true" {
+					info.Datastores[idx].Local = true
+				}
+
+				blockSize := parseDatastoreDetail(detailOutput, "Block size")
+				if blockSize != "" && blockSize != "Unknown" {
+					info.Datastores[idx].BlockSize = blockSize
+				}
+
+				hostsStr := parseDatastoreDetail(detailOutput, "Hosts")
+				var hostCount int
+				if _, err := fmt.Sscanf(hostsStr, "%d", &hostCount); err == nil && hostCount > 0 {
+					info.Datastores[idx].HostCount = hostCount
+				}
+
+				vmsStr := parseDatastoreDetail(detailOutput, "Virtual Machines")
+				var vmCount int
+				if _, err := fmt.Sscanf(vmsStr, "%d", &vmCount); err == nil && vmCount > 0 {
+					info.Datastores[idx].VMCount = vmCount
+				}
+
+				// Parse extents if available
+				extentStr := parseDatastoreDetail(detailOutput, "Extent")
+				if extentStr != "" && extentStr != "Unknown" {
+					info.Datastores[idx].Extents = []string{extentStr}
+				}
+
+				accessibleVal := parseDatastoreDetail(detailOutput, "Accessible")
+				info.Datastores[idx].Accessible = accessibleVal == "Yes" || accessibleVal == "true"
+			}
+		}
+	}
+}
+
+// enrichVSwitchDetailsWithInfrastructure populates vswitch info from the networks' vswitches
+func (i *InspectVM) enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
+	if len(info.Networks) == 0 {
+		return
+	}
+
+	// Collect unique vswitches from networks
+	vswitchSet := make(map[string]bool)
+	for _, network := range info.Networks {
+		if network.VSwitch != "" {
+			vswitchSet[network.VSwitch] = true
+		}
+	}
+
+	if len(vswitchSet) == 0 {
+		return
+	}
+
+	// Get details for each vswitch
+	for vswitchName := range vswitchSet {
+		vswitch := VSwitchInfo{
+			Name: vswitchName,
+		}
+
+		// Query vswitch details
+		detailCmd := fmt.Sprintf("esxcli network vswitch standard list -v '%s' 2>/dev/null", vswitchName)
+		detailOutput, _ := mgr.RunCommand(detailCmd)
+
+		if detailOutput != "" {
+			vswitch.Type = parseVSwitchDetail(detailOutput, "Type")
+
+			portGroupsStr := parseVSwitchDetail(detailOutput, "Port groups")
+			var pgCount int
+			if _, err := fmt.Sscanf(portGroupsStr, "%d", &pgCount); err == nil && pgCount > 0 {
+				vswitch.PortGroupCount = pgCount
+			}
+
+			uplinksStr := parseVSwitchDetail(detailOutput, "Uplinks")
+			if uplinksStr != "" && uplinksStr != "Unknown" {
+				// uplinks might be comma or space separated
+				vswitch.Uplinks = strings.FieldsFunc(uplinksStr, func(r rune) bool {
+					return r == ',' || r == ' '
+				})
+			}
+
+			// Additional details
+			mtuStr := parseVSwitchDetail(detailOutput, "MTU")
+			var mtu int
+			if _, err := fmt.Sscanf(mtuStr, "%d", &mtu); err == nil && mtu > 0 {
+				vswitch.MTU = mtu
+			}
+
+			portsStr := parseVSwitchDetail(detailOutput, "Ports")
+			parsePortsField(portsStr, &vswitch.Ports, &vswitch.AvailablePorts)
+
+			vswitch.LinkDiscovery = parseVSwitchDetail(detailOutput, "Link discovery")
+
+			vmsStr := parseVSwitchDetail(detailOutput, "Attached VMs")
+			parseVMsField(vmsStr, &vswitch.AttachedVMs, &vswitch.ActiveVMs)
+		}
+
+		// Query vswitch security policy
+		securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vswitchName)
+		secOutput, _ := mgr.RunCommand(securityCmd)
+		if secOutput != "" {
+			vswitch.Security = &SecurityPolicy{
+				AllowPromiscuous: parseBoolValue(parseSecurityPolicyField(secOutput, "Promiscuous")),
+				AllowForgedTx:    parseBoolValue(parseSecurityPolicyField(secOutput, "Forged")),
+				AllowMACChanges:  parseBoolValue(parseSecurityPolicyField(secOutput, "MAC")),
+			}
+		}
+
+		// Query vswitch NIC teaming policy
+		teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vswitchName)
+		teamOutput, _ := mgr.RunCommand(teamingCmd)
+		if teamOutput != "" {
+			vswitch.NICTeaming = &NICTeamingPolicy{
+				NotifySwitches: parseBoolValue(parseTeamingPolicyField(teamOutput, "Notify")),
+				Policy:         parseTeamingPolicyField(teamOutput, "Policy"),
+				ReversePolicy:  parseBoolValue(parseTeamingPolicyField(teamOutput, "Reverse")),
+				Failback:       parseBoolValue(parseTeamingPolicyField(teamOutput, "Failback")),
+			}
+		}
+
+		// Query vswitch shaping policy
+		shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vswitchName)
+		shapOutput, _ := mgr.RunCommand(shapingCmd)
+		if shapOutput != "" {
+			vswitch.Shaping = &ShapingPolicy{
+				Enabled: parseBoolValue(parseShapingPolicyField(shapOutput, "Enabled")),
+			}
+		}
+
+		info.VSwitches = append(info.VSwitches, vswitch)
+	}
+}
+
+// ============================================================================
+// HELPER PARSING FUNCTIONS FOR ENRICHMENT
+// ============================================================================
+
+// parsePortGroupDetail extracts a field value from esxcli portgroup get output
+func parsePortGroupDetail(output, fieldName string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldName)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parseSecurityPolicyField extracts a security policy value
+func parseSecurityPolicyField(output, fieldType string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldType)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parseTeamingPolicyField extracts a teaming policy value
+func parseTeamingPolicyField(output, fieldType string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldType)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parseShapingPolicyField extracts a shaping policy value
+func parseShapingPolicyField(output, fieldType string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldType)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parseBoolValue converts Yes/No or true/false to boolean
+func parseBoolValue(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "yes" || value == "true" || value == "1"
+}
+
+// parseDatastoreDetail extracts a field value from esxcli storage filesystem info output
+func parseDatastoreDetail(output, fieldName string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldName)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parseVSwitchDetail extracts a field value from esxcli vswitch standard list output
+func parseVSwitchDetail(output, fieldName string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), strings.ToLower(fieldName)) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// parsePortsField parses "Ports: 1536 (1529 available)" format
+func parsePortsField(portsStr string, totalPorts, availablePorts *int) {
+	// Format: "1536 (1529 available)"
+	if portsStr == "" {
+		return
+	}
+
+	// Extract total ports
+	var total int
+	if _, err := fmt.Sscanf(portsStr, "%d", &total); err == nil && total > 0 {
+		*totalPorts = total
+	}
+
+	// Extract available ports from (XXXX available)
+	if idx := strings.Index(portsStr, "("); idx != -1 {
+		endIdx := strings.Index(portsStr[idx:], ")")
+		if endIdx != -1 {
+			availStr := portsStr[idx+1 : idx+endIdx]
+			var avail int
+			if _, err := fmt.Sscanf(availStr, "%d", &avail); err == nil && avail > 0 {
+				*availablePorts = avail
+			}
+		}
+	}
+}
+
+// parseVMsField parses "X (Y active)" format for attached VMs
+func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
+	// Format: "1 (0 active)"
+	if vmsStr == "" {
+		return
+	}
+
+	// Extract total VMs
+	var total int
+	if _, err := fmt.Sscanf(vmsStr, "%d", &total); err == nil && total > 0 {
+		*totalVMs = total
+	}
+
+	// Extract active VMs from (X active)
+	if idx := strings.Index(vmsStr, "("); idx != -1 {
+		endIdx := strings.Index(vmsStr[idx:], ")")
+		if endIdx != -1 {
+			activeStr := vmsStr[idx+1 : idx+endIdx]
+			var active int
+			if _, err := fmt.Sscanf(activeStr, "%d", &active); err == nil && active >= 0 {
+				*activeVMs = active
+			}
 		}
 	}
 }
