@@ -1,9 +1,4 @@
 package vms
 
-// This file ensures all VM subcommand packages are imported
-// which triggers their init() functions for command registration
-
-import (
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/vms/inspect"
-	_ "github.com/esxi-manager/esxi-manager/internal/esxi/vms/list"
-)
+// This file is a placeholder to establish the vms package.
+// Commands (inspect.go, list.go) are registered via their init() functions.

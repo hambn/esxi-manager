@@ -1,4 +1,4 @@
-package list
+package vms
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-type VMInfo struct {
+type VMListInfo struct {
 	ID        string
 	Name      string
 	GuestOS   string
@@ -47,8 +47,8 @@ func (c *ListVMsCommand) Execute() error {
 	return nil
 }
 
-func (c *ListVMsCommand) parseVMs(output string, manager *utils.SSHManager) []VMInfo {
-	var vms []VMInfo
+func (c *ListVMsCommand) parseVMs(output string, manager *utils.SSHManager) []VMListInfo {
+	var vms []VMListInfo
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
 	for _, line := range lines {
@@ -69,16 +69,16 @@ func (c *ListVMsCommand) parseVMs(output string, manager *utils.SSHManager) []VM
 	return vms
 }
 
-func (c *ListVMsCommand) parseVMLine(line string) *VMInfo {
+func (c *ListVMsCommand) parseVMLine(line string) *VMListInfo {
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
 		return nil
 	}
 
-	vm := &VMInfo{
+	vm := &VMListInfo{
 		ID:        fields[0],
 		Name:      fields[1],
-		GuestOS:   extractField(fields, 4, "-"),
+		GuestOS:   extractVMField(fields, 4, "-"),
 		Status:    "unknown",
 		CPU:       "-",
 		Memory:    "-",
@@ -93,7 +93,7 @@ func (c *ListVMsCommand) parseVMLine(line string) *VMInfo {
 	return vm
 }
 
-func (c *ListVMsCommand) enrichVM(vm *VMInfo, manager *utils.SSHManager) {
+func (c *ListVMsCommand) enrichVM(vm *VMListInfo, manager *utils.SSHManager) {
 	summaryCmd := fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vm.ID)
 	summaryOutput, err := manager.RunCommand(summaryCmd)
 	if err != nil {
@@ -105,7 +105,7 @@ func (c *ListVMsCommand) enrichVM(vm *VMInfo, manager *utils.SSHManager) {
 	c.extractDiskUsage(vm, manager)
 }
 
-func (c *ListVMsCommand) extractVMStatus(summary string, vm *VMInfo) {
+func (c *ListVMsCommand) extractVMStatus(summary string, vm *VMListInfo) {
 	switch {
 	case strings.Contains(summary, `powerState = "poweredOn"`):
 		vm.Status = "on"
@@ -116,18 +116,18 @@ func (c *ListVMsCommand) extractVMStatus(summary string, vm *VMInfo) {
 	}
 }
 
-func (c *ListVMsCommand) extractCPUAndMemory(summary string, vm *VMInfo) {
+func (c *ListVMsCommand) extractCPUAndMemory(summary string, vm *VMListInfo) {
 	if match := regexp.MustCompile(`numCpu\s*=\s*(\d+)`).FindStringSubmatch(summary); len(match) > 1 {
 		vm.CPU = match[1]
 	}
 
 	if match := regexp.MustCompile(`memorySizeMB\s*=\s*(\d+)`).FindStringSubmatch(summary); len(match) > 1 {
-		memMB := toInt64(match[1])
+		memMB := vmToInt64(match[1])
 		vm.Memory = utils.FormatBytes(memMB * 1024 * 1024)
 	}
 }
 
-func (c *ListVMsCommand) extractDiskUsage(vm *VMInfo, manager *utils.SSHManager) {
+func (c *ListVMsCommand) extractDiskUsage(vm *VMListInfo, manager *utils.SSHManager) {
 	if vm.FilePath == "" {
 		return
 	}
@@ -154,7 +154,7 @@ func (c *ListVMsCommand) extractDiskUsage(vm *VMInfo, manager *utils.SSHManager)
 	}
 }
 
-func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
+func (c *ListVMsCommand) displayVMs(vms []VMListInfo) {
 	if len(vms) == 0 {
 		fmt.Println("No virtual machines found")
 		return
@@ -174,14 +174,14 @@ func (c *ListVMsCommand) displayVMs(vms []VMInfo) {
 	fmt.Print(buf.String())
 }
 
-func extractField(fields []string, index int, defaultValue string) string {
+func extractVMField(fields []string, index int, defaultValue string) string {
 	if index < len(fields) {
 		return fields[index]
 	}
 	return defaultValue
 }
 
-func toInt64(s string) int64 {
+func vmToInt64(s string) int64 {
 	i, _ := strconv.ParseInt(s, 10, 64)
 	return i
 }

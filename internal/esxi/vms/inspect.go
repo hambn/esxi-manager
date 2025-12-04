@@ -1,4 +1,4 @@
-package inspect
+package vms
 
 import (
 	"encoding/json"
@@ -1663,7 +1663,6 @@ func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
 // COMMAND REGISTRATION
 // ============================================================================
 
-// Register registers the inspect command
 func init() {
 	config.Register("vm-inspect", func(params *config.Params) config.CommandInterface {
 		return NewInspectVM(params)
