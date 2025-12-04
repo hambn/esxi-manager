@@ -25,11 +25,24 @@ OPTIONAL FLAGS:
   --esxi-host-port       ESXi host SSH port (default: 22)
 
 AVAILABLE COMMANDS:
-  test-connection       Test SSH connectivity to ESXi host
-  get-version          Get ESXi host version information
-  list-vms             List all virtual machines on ESXi host
-  list-port-groups     List all port groups on ESXi host
-  list-datastores      List all datastores on ESXi host
+  test-connection           Test SSH connectivity to ESXi host
+  get-version              Get ESXi host version information
+
+  Virtual Machines:
+    list-vms               List all virtual machines on ESXi host
+    vm-inspect             Inspect specific VM (requires --vm-name or --vm-id)
+
+  Storage:
+    list-datastores        List all datastores on ESXi host
+    datastore-inspect      Inspect specific datastore (requires --datastore-name)
+
+  Networking:
+    list-portgroups        List all port groups on ESXi host
+    portgroup-inspect      Inspect specific port group (requires --portgroup-name)
+    list-vswitches         List all virtual switches
+    vswitch-inspect        Inspect specific vswitch (requires --vswitch-name)
+    list-network-adapters  List all physical network adapters
+    list-vmknics           List all VM kernel NICs
 
 EXAMPLE:
   esxi-manager \

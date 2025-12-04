@@ -94,9 +94,9 @@ func (p *PortGroupInspect) parsePortGroupListing(output string) []config.PortGro
 	var portgroups []config.PortGroupInfo
 
 	lines := strings.Split(output, "\n")
-	// Skip header line
-	for idx, line := range lines {
-		if idx == 0 || strings.TrimSpace(line) == "" {
+	// Skip header line and separator line
+	for i, line := range lines {
+		if i < 2 || strings.TrimSpace(line) == "" {
 			continue
 		}
 
@@ -105,13 +105,19 @@ func (p *PortGroupInspect) parsePortGroupListing(output string) []config.PortGro
 			continue
 		}
 
-		pgName := fields[0]
-		vswitchName := fields[1]
-		activeClients := 0
+		// Parse from the end: last two fields are always ActiveClients and VLANID (numeric)
+		// VSwitch is typically a single word (vSwitch0, vSwitch-test-01, etc.)
+		// Everything before that is the portgroup name (may have spaces)
 		vlanID := 0
+		activeClients := 0
+		fmt.Sscanf(fields[len(fields)-1], "%d", &vlanID)
+		fmt.Sscanf(fields[len(fields)-2], "%d", &activeClients)
 
-		fmt.Sscanf(fields[2], "%d", &activeClients)
-		fmt.Sscanf(fields[3], "%d", &vlanID)
+		// VSwitch is always one field before active clients
+		vswitchName := fields[len(fields)-3]
+
+		// Everything before the vswitch is the name
+		pgName := strings.Join(fields[:len(fields)-3], " ")
 
 		pg := config.PortGroupInfo{
 			Name:          pgName,
