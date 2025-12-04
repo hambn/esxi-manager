@@ -148,7 +148,7 @@ type InspectVMInfo struct {
 	ToolsType    string `json:"tools_type,omitempty"`
 
 	// Hardware and resources
-	Hardware HardwareInfo `json:"hardware"`
+	Hardware config.HardwareInfo `json:"hardware"`
 
 	// Usage metrics
 	MaxCpuUsage   int `json:"max_cpu_usage,omitempty"`
@@ -177,57 +177,23 @@ type InspectVMInfo struct {
 	VMXPath      string `json:"-"`
 }
 
-// HardwareInfo contains hardware specifications
-type HardwareInfo struct {
-	CPUs              int `json:"cpus"`
-	Memory            int `json:"memory_mb"`
-	MaxCPUs           int `json:"max_cpus,omitempty"`
-	MaxMemory         int `json:"max_memory_mb,omitempty"`
-	BootDelay         int `json:"boot_delay_ms,omitempty"`
-	CoresPerSocket    int `json:"cores_per_socket,omitempty"`
-	SimultaneousThreads int `json:"simultaneous_threads,omitempty"`
-	MotherboardLayout string `json:"motherboard_layout,omitempty"`
-}
-
-// SecurityPolicy holds security settings for port groups and vswitches
-type SecurityPolicy struct {
-	AllowPromiscuous bool `json:"allow_promiscuous_mode,omitempty"`
-	AllowForgedTx    bool `json:"allow_forged_transmits,omitempty"`
-	AllowMACChanges  bool `json:"allow_mac_changes,omitempty"`
-}
-
-// NICTeamingPolicy holds NIC teaming/failover settings
-type NICTeamingPolicy struct {
-	NotifySwitches bool   `json:"notify_switches,omitempty"`
-	Policy         string `json:"policy,omitempty"`
-	ReversePolicy  bool   `json:"reverse_policy,omitempty"`
-	Failback       bool   `json:"failback,omitempty"`
-}
-
-// ShapingPolicy holds traffic shaping settings
-type ShapingPolicy struct {
-	Enabled           bool   `json:"enabled,omitempty"`
-	AverageBandwidth  int64  `json:"average_bandwidth,omitempty"`
-	PeakBandwidth     int64  `json:"peak_bandwidth,omitempty"`
-	BurstSize         int64  `json:"burst_size,omitempty"`
-}
 
 // NetworkInfo holds NIC information with detailed vswitch/portgroup details
 type NetworkInfo struct {
-	Index          int              `json:"index"`
-	Name           string           `json:"name"`
-	MacAddress     string           `json:"mac_address"`
-	Network        string           `json:"network"`
-	Connected      bool             `json:"connected"`
-	VSwitch        string           `json:"vswitch,omitempty"`
-	VLANID         int              `json:"vlan_id,omitempty"`
-	ActiveClients  int              `json:"active_clients,omitempty"`
-	Accessible     bool             `json:"accessible,omitempty"`
-	VMCount        int              `json:"vm_count,omitempty"`
-	ActivePorts    int              `json:"active_ports,omitempty"`
-	Security       *SecurityPolicy  `json:"security_policy,omitempty"`
-	NICTeaming     *NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
-	Shaping        *ShapingPolicy   `json:"shaping_policy,omitempty"`
+	Index          int                      `json:"index"`
+	Name           string                   `json:"name"`
+	MacAddress     string                   `json:"mac_address"`
+	Network        string                   `json:"network"`
+	Connected      bool                     `json:"connected"`
+	VSwitch        string                   `json:"vswitch,omitempty"`
+	VLANID         int                      `json:"vlan_id,omitempty"`
+	ActiveClients  int                      `json:"active_clients,omitempty"`
+	Accessible     bool                     `json:"accessible,omitempty"`
+	VMCount        int                      `json:"vm_count,omitempty"`
+	ActivePorts    int                      `json:"active_ports,omitempty"`
+	Security       *config.SecurityPolicy   `json:"security_policy,omitempty"`
+	NICTeaming     *config.NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
+	Shaping        *config.ShapingPolicy    `json:"shaping_policy,omitempty"`
 }
 
 // DiskInfo holds disk information
@@ -280,9 +246,9 @@ type VSwitchInfo struct {
 	LinkDiscovery  string            `json:"link_discovery,omitempty"`
 	AttachedVMs    int               `json:"attached_vms,omitempty"`
 	ActiveVMs      int               `json:"active_vms,omitempty"`
-	Security       *SecurityPolicy   `json:"security_policy,omitempty"`
-	NICTeaming     *NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
-	Shaping        *ShapingPolicy    `json:"shaping_policy,omitempty"`
+	Security       *config.SecurityPolicy   `json:"security_policy,omitempty"`
+	NICTeaming     *config.NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
+	Shaping        *config.ShapingPolicy    `json:"shaping_policy,omitempty"`
 }
 
 // SnapshotInfo holds snapshot information
@@ -396,7 +362,7 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 	i.enrichVSwitchDetailsWithInfrastructure(mgr, info)
 
 	// Phase 9: Populate hardware info
-	info.Hardware = HardwareInfo{
+	info.Hardware = config.HardwareInfo{
 		CPUs:      info.CPUs,
 		Memory:    info.Memory,
 		MaxCPUs:   info.MaxCPUs,
@@ -1304,7 +1270,7 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 			securityCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy security get -p '%s' 2>/dev/null", network.Network)
 			secOutput, _ := mgr.RunCommand(securityCmd)
 			if secOutput != "" {
-				info.Networks[idx].Security = &SecurityPolicy{
+				info.Networks[idx].Security = &config.SecurityPolicy{
 					AllowPromiscuous: parseBoolValue(parseSecurityPolicyField(secOutput, "Promiscuous")),
 					AllowForgedTx:    parseBoolValue(parseSecurityPolicyField(secOutput, "Forged")),
 					AllowMACChanges:  parseBoolValue(parseSecurityPolicyField(secOutput, "MAC")),
@@ -1315,7 +1281,7 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 			teamingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy failover get -p '%s' 2>/dev/null", network.Network)
 			teamOutput, _ := mgr.RunCommand(teamingCmd)
 			if teamOutput != "" {
-				info.Networks[idx].NICTeaming = &NICTeamingPolicy{
+				info.Networks[idx].NICTeaming = &config.NICTeamingPolicy{
 					NotifySwitches: parseBoolValue(parseTeamingPolicyField(teamOutput, "Notify")),
 					Policy:         parseTeamingPolicyField(teamOutput, "Policy"),
 					ReversePolicy:  parseBoolValue(parseTeamingPolicyField(teamOutput, "Reverse")),
@@ -1327,7 +1293,7 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 			shapingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy shaping get -p '%s' 2>/dev/null", network.Network)
 			shapOutput, _ := mgr.RunCommand(shapingCmd)
 			if shapOutput != "" {
-				info.Networks[idx].Shaping = &ShapingPolicy{
+				info.Networks[idx].Shaping = &config.ShapingPolicy{
 					Enabled: parseBoolValue(parseShapingPolicyField(shapOutput, "Enabled")),
 				}
 			}
@@ -1512,7 +1478,7 @@ func (i *InspectVM) enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager
 		securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vswitchName)
 		secOutput, _ := mgr.RunCommand(securityCmd)
 		if secOutput != "" {
-			vswitch.Security = &SecurityPolicy{
+			vswitch.Security = &config.SecurityPolicy{
 				AllowPromiscuous: parseBoolValue(parseSecurityPolicyField(secOutput, "Promiscuous")),
 				AllowForgedTx:    parseBoolValue(parseSecurityPolicyField(secOutput, "Forged")),
 				AllowMACChanges:  parseBoolValue(parseSecurityPolicyField(secOutput, "MAC")),
@@ -1523,7 +1489,7 @@ func (i *InspectVM) enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager
 		teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vswitchName)
 		teamOutput, _ := mgr.RunCommand(teamingCmd)
 		if teamOutput != "" {
-			vswitch.NICTeaming = &NICTeamingPolicy{
+			vswitch.NICTeaming = &config.NICTeamingPolicy{
 				NotifySwitches: parseBoolValue(parseTeamingPolicyField(teamOutput, "Notify")),
 				Policy:         parseTeamingPolicyField(teamOutput, "Policy"),
 				ReversePolicy:  parseBoolValue(parseTeamingPolicyField(teamOutput, "Reverse")),
@@ -1535,7 +1501,7 @@ func (i *InspectVM) enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager
 		shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vswitchName)
 		shapOutput, _ := mgr.RunCommand(shapingCmd)
 		if shapOutput != "" {
-			vswitch.Shaping = &ShapingPolicy{
+			vswitch.Shaping = &config.ShapingPolicy{
 				Enabled: parseBoolValue(parseShapingPolicyField(shapOutput, "Enabled")),
 			}
 		}
