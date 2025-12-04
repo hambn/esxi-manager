@@ -76,21 +76,23 @@ func (l *ListVMKnics) parseVMKnicListing(output string) []config.VMKnicInfo {
 	var knics []config.VMKnicInfo
 	lines := strings.Split(output, "\n")
 
-	for idx, line := range lines {
-		if idx == 0 || strings.TrimSpace(line) == "" {
+	for _, line := range lines {
+		// Check indentation before trimming
+		isIndented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" {
 			continue
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
-			continue
+		// Lines that are NOT indented are KNIC names
+		if !isIndented {
+			// This is a KNIC name
+			knic := config.VMKnicInfo{
+				Name: trimmed,
+			}
+			knics = append(knics, knic)
 		}
-
-		knic := config.VMKnicInfo{
-			Name: fields[0],
-		}
-
-		knics = append(knics, knic)
 	}
 
 	return knics
