@@ -6,7 +6,6 @@ import (
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/inspects"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
@@ -28,6 +27,10 @@ func (p *PortGroupInspect) Validate() error {
 
 // Execute gathers and outputs comprehensive port group information as JSON
 func (p *PortGroupInspect) Execute() error {
+	if p.params.PortgroupName == "" {
+		return fmt.Errorf("--portgroup-name parameter is required for portgroup-inspect")
+	}
+
 	mgr, err := utils.NewSSHManager(p.params)
 	if err != nil {
 		return common.NewConnectionError(p.params.ESXiHostURI, "failed to create SSH manager", err)
@@ -44,15 +47,30 @@ func (p *PortGroupInspect) Execute() error {
 		return err
 	}
 
-	// Enrich port groups with policies
-	enrichedPortGroups, err := p.enrichPortGroupsWithPolicies(mgr, portgroups)
+	// Find the requested port group
+	var targetPortGroup config.PortGroupInfo
+	found := false
+	for _, pg := range portgroups {
+		if pg.Name == p.params.PortgroupName {
+			targetPortGroup = pg
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("portgroup '%s' not found", p.params.PortgroupName)
+	}
+
+	// Enrich single port group with policies
+	enrichedPortGroup, err := p.enrichPortGroupWithPolicies(mgr, targetPortGroup)
 	if err != nil {
-		common.Debug("enrich portgroups", "error", err.Error())
+		common.Debug("enrich portgroup", "error", err.Error())
 		// Don't fail if enrichment fails
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedPortGroups)
+	formatted, err := presenter.FormatAsJSON(enrichedPortGroup)
 	if err != nil {
 		return common.WrapError(err, "failed to format portgroup info")
 	}
@@ -62,7 +80,7 @@ func (p *PortGroupInspect) Execute() error {
 }
 
 // gatherPortGroups gathers port group information
-func (p *PortGroupInspect) gatherPortGroups(mgr *utils.SSHManager) ([]inspects.PortGroupInfo, error) {
+func (p *PortGroupInspect) gatherPortGroups(mgr *utils.SSHManager) ([]config.PortGroupInfo, error) {
 	output, err := mgr.RunCommand("esxcli network vswitch standard portgroup list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
 		return nil, fmt.Errorf("failed to query port groups: %w", err)
@@ -72,8 +90,8 @@ func (p *PortGroupInspect) gatherPortGroups(mgr *utils.SSHManager) ([]inspects.P
 }
 
 // parsePortGroupListing parses esxcli port group output
-func (p *PortGroupInspect) parsePortGroupListing(output string) []inspects.PortGroupInfo {
-	var portgroups []inspects.PortGroupInfo
+func (p *PortGroupInspect) parsePortGroupListing(output string) []config.PortGroupInfo {
+	var portgroups []config.PortGroupInfo
 
 	lines := strings.Split(output, "\n")
 	// Skip header line
@@ -95,7 +113,7 @@ func (p *PortGroupInspect) parsePortGroupListing(output string) []inspects.PortG
 		fmt.Sscanf(fields[2], "%d", &activeClients)
 		fmt.Sscanf(fields[3], "%d", &vlanID)
 
-		pg := inspects.PortGroupInfo{
+		pg := config.PortGroupInfo{
 			Name:          pgName,
 			VSwitch:       vswitchName,
 			VLANID:        vlanID,
@@ -107,48 +125,46 @@ func (p *PortGroupInspect) parsePortGroupListing(output string) []inspects.PortG
 	return portgroups
 }
 
-// enrichPortGroupsWithPolicies queries detailed information and policies
-func (p *PortGroupInspect) enrichPortGroupsWithPolicies(mgr *utils.SSHManager, portgroups []inspects.PortGroupInfo) ([]inspects.PortGroupInfo, error) {
-	for idx, pg := range portgroups {
-		if pg.Name == "" {
-			continue
-		}
-
-		// Query detailed port group info
-		pgDetailCmd := fmt.Sprintf("esxcli network vswitch standard portgroup get -p '%s' 2>/dev/null", pg.Name)
-		pgDetailOutput, _ := mgr.RunCommand(pgDetailCmd)
-
-		if pgDetailOutput != "" {
-			portgroups[idx] = p.parsePortGroupDetail(portgroups[idx], pgDetailOutput)
-		}
-
-		// Query security policy
-		securityCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy security get -p '%s' 2>/dev/null", pg.Name)
-		secOutput, _ := mgr.RunCommand(securityCmd)
-		if secOutput != "" {
-			portgroups[idx].Security = p.parseSecurityPolicy(secOutput)
-		}
-
-		// Query NIC teaming policy
-		teamingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy failover get -p '%s' 2>/dev/null", pg.Name)
-		teamOutput, _ := mgr.RunCommand(teamingCmd)
-		if teamOutput != "" {
-			portgroups[idx].NICTeaming = p.parseTeamingPolicy(teamOutput)
-		}
-
-		// Query shaping policy
-		shapingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy shaping get -p '%s' 2>/dev/null", pg.Name)
-		shapOutput, _ := mgr.RunCommand(shapingCmd)
-		if shapOutput != "" {
-			portgroups[idx].Shaping = p.parseShapingPolicy(shapOutput)
-		}
+// enrichPortGroupWithPolicies queries detailed information and policies for a single port group
+func (p *PortGroupInspect) enrichPortGroupWithPolicies(mgr *utils.SSHManager, pg config.PortGroupInfo) (config.PortGroupInfo, error) {
+	if pg.Name == "" {
+		return pg, nil
 	}
 
-	return portgroups, nil
+	// Query detailed port group info
+	pgDetailCmd := fmt.Sprintf("esxcli network vswitch standard portgroup get -p '%s' 2>/dev/null", pg.Name)
+	pgDetailOutput, _ := mgr.RunCommand(pgDetailCmd)
+
+	if pgDetailOutput != "" {
+		pg = p.parsePortGroupDetail(pg, pgDetailOutput)
+	}
+
+	// Query security policy
+	securityCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy security get -p '%s' 2>/dev/null", pg.Name)
+	secOutput, _ := mgr.RunCommand(securityCmd)
+	if secOutput != "" {
+		pg.Security = p.parseSecurityPolicy(secOutput)
+	}
+
+	// Query NIC teaming policy
+	teamingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy failover get -p '%s' 2>/dev/null", pg.Name)
+	teamOutput, _ := mgr.RunCommand(teamingCmd)
+	if teamOutput != "" {
+		pg.NICTeaming = p.parseTeamingPolicy(teamOutput)
+	}
+
+	// Query shaping policy
+	shapingCmd := fmt.Sprintf("esxcli network vswitch standard portgroup policy shaping get -p '%s' 2>/dev/null", pg.Name)
+	shapOutput, _ := mgr.RunCommand(shapingCmd)
+	if shapOutput != "" {
+		pg.Shaping = p.parseShapingPolicy(shapOutput)
+	}
+
+	return pg, nil
 }
 
 // parsePortGroupDetail parses detailed port group information
-func (p *PortGroupInspect) parsePortGroupDetail(pg inspects.PortGroupInfo, output string) inspects.PortGroupInfo {
+func (p *PortGroupInspect) parsePortGroupDetail(pg config.PortGroupInfo, output string) config.PortGroupInfo {
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -180,8 +196,8 @@ func (p *PortGroupInspect) parsePortGroupDetail(pg inspects.PortGroupInfo, outpu
 }
 
 // parseSecurityPolicy extracts security policy
-func (p *PortGroupInspect) parseSecurityPolicy(output string) *inspects.SecurityPolicy {
-	policy := &inspects.SecurityPolicy{}
+func (p *PortGroupInspect) parseSecurityPolicy(output string) *config.SecurityPolicy {
+	policy := &config.SecurityPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -211,8 +227,8 @@ func (p *PortGroupInspect) parseSecurityPolicy(output string) *inspects.Security
 }
 
 // parseTeamingPolicy extracts teaming policy
-func (p *PortGroupInspect) parseTeamingPolicy(output string) *inspects.NICTeamingPolicy {
-	policy := &inspects.NICTeamingPolicy{}
+func (p *PortGroupInspect) parseTeamingPolicy(output string) *config.NICTeamingPolicy {
+	policy := &config.NICTeamingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -247,8 +263,8 @@ func (p *PortGroupInspect) parseTeamingPolicy(output string) *inspects.NICTeamin
 }
 
 // parseShapingPolicy extracts shaping policy
-func (p *PortGroupInspect) parseShapingPolicy(output string) *inspects.ShapingPolicy {
-	policy := &inspects.ShapingPolicy{}
+func (p *PortGroupInspect) parseShapingPolicy(output string) *config.ShapingPolicy {
+	policy := &config.ShapingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {

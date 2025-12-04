@@ -6,7 +6,6 @@ import (
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/inspects"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
@@ -28,6 +27,10 @@ func (v *VSwitchInspect) Validate() error {
 
 // Execute gathers and outputs comprehensive vswitch information as JSON
 func (v *VSwitchInspect) Execute() error {
+	if v.params.VSwitchName == "" {
+		return fmt.Errorf("--vswitch-name parameter is required for vswitch-inspect")
+	}
+
 	mgr, err := utils.NewSSHManager(v.params)
 	if err != nil {
 		return common.NewConnectionError(v.params.ESXiHostURI, "failed to create SSH manager", err)
@@ -44,15 +47,30 @@ func (v *VSwitchInspect) Execute() error {
 		return err
 	}
 
-	// Enrich vswitches with policies
-	enrichedVSwitches, err := v.enrichVSwitchesWithPolicies(mgr, vswitches)
+	// Find the requested vswitch
+	var targetVSwitch config.VSwitchInfo
+	found := false
+	for _, vs := range vswitches {
+		if vs.Name == v.params.VSwitchName {
+			targetVSwitch = vs
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("vswitch '%s' not found", v.params.VSwitchName)
+	}
+
+	// Enrich single vswitch with policies
+	enrichedVSwitch, err := v.enrichVSwitchWithPolicies(mgr, targetVSwitch)
 	if err != nil {
-		common.Debug("enrich vswitches", "error", err.Error())
+		common.Debug("enrich vswitch", "error", err.Error())
 		// Don't fail if enrichment fails
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedVSwitches)
+	formatted, err := presenter.FormatAsJSON(enrichedVSwitch)
 	if err != nil {
 		return common.WrapError(err, "failed to format vswitch info")
 	}
@@ -62,7 +80,7 @@ func (v *VSwitchInspect) Execute() error {
 }
 
 // gatherVSwitches gathers vswitch information
-func (v *VSwitchInspect) gatherVSwitches(mgr *utils.SSHManager) ([]inspects.VSwitchInfo, error) {
+func (v *VSwitchInspect) gatherVSwitches(mgr *utils.SSHManager) ([]config.VSwitchInfo, error) {
 	output, err := mgr.RunCommand("esxcli network vswitch standard list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
 		return nil, fmt.Errorf("failed to query vswitches: %w", err)
@@ -72,9 +90,9 @@ func (v *VSwitchInspect) gatherVSwitches(mgr *utils.SSHManager) ([]inspects.VSwi
 }
 
 // parseVSwitchListing parses esxcli vswitch output
-func (v *VSwitchInspect) parseVSwitchListing(output string) []inspects.VSwitchInfo {
-	var vswitches []inspects.VSwitchInfo
-	var currentVSwitch inspects.VSwitchInfo
+func (v *VSwitchInspect) parseVSwitchListing(output string) []config.VSwitchInfo {
+	var vswitches []config.VSwitchInfo
+	var currentVSwitch config.VSwitchInfo
 	var inVSwitch bool
 
 	lines := strings.Split(output, "\n")
@@ -83,7 +101,7 @@ func (v *VSwitchInspect) parseVSwitchListing(output string) []inspects.VSwitchIn
 		if line == "" {
 			if inVSwitch && currentVSwitch.Name != "" {
 				vswitches = append(vswitches, currentVSwitch)
-				currentVSwitch = inspects.VSwitchInfo{}
+				currentVSwitch = config.VSwitchInfo{}
 				inVSwitch = false
 			}
 			continue
@@ -149,41 +167,39 @@ func (v *VSwitchInspect) parseVSwitchListing(output string) []inspects.VSwitchIn
 	return vswitches
 }
 
-// enrichVSwitchesWithPolicies queries security, teaming, and shaping policies
-func (v *VSwitchInspect) enrichVSwitchesWithPolicies(mgr *utils.SSHManager, vswitches []inspects.VSwitchInfo) ([]inspects.VSwitchInfo, error) {
-	for idx, vs := range vswitches {
-		if vs.Name == "" {
-			continue
-		}
-
-		// Query security policy
-		securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vs.Name)
-		secOutput, _ := mgr.RunCommand(securityCmd)
-		if secOutput != "" {
-			vswitches[idx].Security = v.parseSecurityPolicy(secOutput)
-		}
-
-		// Query NIC teaming policy
-		teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vs.Name)
-		teamOutput, _ := mgr.RunCommand(teamingCmd)
-		if teamOutput != "" {
-			vswitches[idx].NICTeaming = v.parseTeamingPolicy(teamOutput)
-		}
-
-		// Query shaping policy
-		shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vs.Name)
-		shapOutput, _ := mgr.RunCommand(shapingCmd)
-		if shapOutput != "" {
-			vswitches[idx].Shaping = v.parseShapingPolicy(shapOutput)
-		}
+// enrichVSwitchWithPolicies queries security, teaming, and shaping policies for a single vswitch
+func (v *VSwitchInspect) enrichVSwitchWithPolicies(mgr *utils.SSHManager, vs config.VSwitchInfo) (config.VSwitchInfo, error) {
+	if vs.Name == "" {
+		return vs, nil
 	}
 
-	return vswitches, nil
+	// Query security policy
+	securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vs.Name)
+	secOutput, _ := mgr.RunCommand(securityCmd)
+	if secOutput != "" {
+		vs.Security = v.parseSecurityPolicy(secOutput)
+	}
+
+	// Query NIC teaming policy
+	teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vs.Name)
+	teamOutput, _ := mgr.RunCommand(teamingCmd)
+	if teamOutput != "" {
+		vs.NICTeaming = v.parseTeamingPolicy(teamOutput)
+	}
+
+	// Query shaping policy
+	shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vs.Name)
+	shapOutput, _ := mgr.RunCommand(shapingCmd)
+	if shapOutput != "" {
+		vs.Shaping = v.parseShapingPolicy(shapOutput)
+	}
+
+	return vs, nil
 }
 
 // parseSecurityPolicy extracts security policy from esxcli output
-func (v *VSwitchInspect) parseSecurityPolicy(output string) *inspects.SecurityPolicy {
-	policy := &inspects.SecurityPolicy{}
+func (v *VSwitchInspect) parseSecurityPolicy(output string) *config.SecurityPolicy {
+	policy := &config.SecurityPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -213,8 +229,8 @@ func (v *VSwitchInspect) parseSecurityPolicy(output string) *inspects.SecurityPo
 }
 
 // parseTeamingPolicy extracts teaming policy from esxcli output
-func (v *VSwitchInspect) parseTeamingPolicy(output string) *inspects.NICTeamingPolicy {
-	policy := &inspects.NICTeamingPolicy{}
+func (v *VSwitchInspect) parseTeamingPolicy(output string) *config.NICTeamingPolicy {
+	policy := &config.NICTeamingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -249,8 +265,8 @@ func (v *VSwitchInspect) parseTeamingPolicy(output string) *inspects.NICTeamingP
 }
 
 // parseShapingPolicy extracts shaping policy from esxcli output
-func (v *VSwitchInspect) parseShapingPolicy(output string) *inspects.ShapingPolicy {
-	policy := &inspects.ShapingPolicy{}
+func (v *VSwitchInspect) parseShapingPolicy(output string) *config.ShapingPolicy {
+	policy := &config.ShapingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {

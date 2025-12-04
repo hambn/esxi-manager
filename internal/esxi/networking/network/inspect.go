@@ -6,7 +6,6 @@ import (
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/inspects"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
@@ -39,7 +38,7 @@ func (n *NetworkInspect) Execute() error {
 	}
 
 	// Get all network adapters (stub - would need specific VM/host implementation)
-	adapters := []inspects.NetworkAdapterInfo{}
+	adapters := []config.NetworkAdapterInfo{}
 
 	// Format as JSON
 	formatted, err := presenter.FormatAsJSON(adapters)
@@ -52,14 +51,14 @@ func (n *NetworkInspect) Execute() error {
 }
 
 // GatherNetworkAdaptersForVM gathers network adapters for a specific VM
-func (n *NetworkInspect) GatherNetworkAdaptersForVM(mgr *utils.SSHManager, vmID string) ([]inspects.NetworkAdapterInfo, error) {
+func (n *NetworkInspect) GatherNetworkAdaptersForVM(mgr *utils.SSHManager, vmID string) ([]config.NetworkAdapterInfo, error) {
 	// This would be called by vm-inspect to get network adapters
 	// For now, returns empty slice - implementation would parse VMX config
-	return []inspects.NetworkAdapterInfo{}, nil
+	return []config.NetworkAdapterInfo{}, nil
 }
 
 // EnrichNetworkAdaptersWithInfrastructure enriches adapters with vswitch and port group details
-func (n *NetworkInspect) EnrichNetworkAdaptersWithInfrastructure(mgr *utils.SSHManager, adapters []inspects.NetworkAdapterInfo) ([]inspects.NetworkAdapterInfo, error) {
+func (n *NetworkInspect) EnrichNetworkAdaptersWithInfrastructure(mgr *utils.SSHManager, adapters []config.NetworkAdapterInfo) ([]config.NetworkAdapterInfo, error) {
 	// Get all port groups with esxcli
 	output, err := mgr.RunCommand("esxcli network vswitch standard portgroup list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
@@ -157,7 +156,7 @@ func (n *NetworkInspect) EnrichNetworkAdaptersWithInfrastructure(mgr *utils.SSHM
 }
 
 // parsePortGroupDetail parses portgroup details
-func (n *NetworkInspect) parsePortGroupDetail(adapter inspects.NetworkAdapterInfo, output string) inspects.NetworkAdapterInfo {
+func (n *NetworkInspect) parsePortGroupDetail(adapter config.NetworkAdapterInfo, output string) config.NetworkAdapterInfo {
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -189,8 +188,8 @@ func (n *NetworkInspect) parsePortGroupDetail(adapter inspects.NetworkAdapterInf
 }
 
 // parseSecurityPolicy extracts security policy
-func (n *NetworkInspect) parseSecurityPolicy(output string) *inspects.SecurityPolicy {
-	policy := &inspects.SecurityPolicy{}
+func (n *NetworkInspect) parseSecurityPolicy(output string) *config.SecurityPolicy {
+	policy := &config.SecurityPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -220,8 +219,8 @@ func (n *NetworkInspect) parseSecurityPolicy(output string) *inspects.SecurityPo
 }
 
 // parseTeamingPolicy extracts teaming policy
-func (n *NetworkInspect) parseTeamingPolicy(output string) *inspects.NICTeamingPolicy {
-	policy := &inspects.NICTeamingPolicy{}
+func (n *NetworkInspect) parseTeamingPolicy(output string) *config.NICTeamingPolicy {
+	policy := &config.NICTeamingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -256,8 +255,8 @@ func (n *NetworkInspect) parseTeamingPolicy(output string) *inspects.NICTeamingP
 }
 
 // parseShapingPolicy extracts shaping policy
-func (n *NetworkInspect) parseShapingPolicy(output string) *inspects.ShapingPolicy {
-	policy := &inspects.ShapingPolicy{}
+func (n *NetworkInspect) parseShapingPolicy(output string) *config.ShapingPolicy {
+	policy := &config.ShapingPolicy{}
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {

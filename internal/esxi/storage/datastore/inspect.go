@@ -6,7 +6,6 @@ import (
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
-	"github.com/esxi-manager/esxi-manager/internal/esxi/inspects"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
@@ -30,6 +29,10 @@ func (d *DatastoreInspect) Validate() error {
 
 // Execute gathers and outputs comprehensive datastore information as JSON
 func (d *DatastoreInspect) Execute() error {
+	if d.params.DatastoreName == "" {
+		return fmt.Errorf("--datastore-name parameter is required for datastore-inspect")
+	}
+
 	mgr, err := utils.NewSSHManager(d.params)
 	if err != nil {
 		return common.NewConnectionError(d.params.ESXiHostURI, "failed to create SSH manager", err)
@@ -46,15 +49,31 @@ func (d *DatastoreInspect) Execute() error {
 		return err
 	}
 
-	// Enrich datastores with metadata
-	enrichedDatastores, err := d.enrichDatastoresWithMetadata(mgr, datastores)
+	// Find the requested datastore
+	var targetDatastore config.DatastoreInfo
+	found := false
+	for _, ds := range datastores {
+		// Match by name or UUID
+		if ds.Name == d.params.DatastoreName || ds.UUID == d.params.DatastoreName {
+			targetDatastore = ds
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("datastore '%s' not found", d.params.DatastoreName)
+	}
+
+	// Enrich single datastore with metadata
+	enrichedDatastore, err := d.enrichDatastoreWithMetadata(mgr, targetDatastore)
 	if err != nil {
-		common.Debug("enrich datastores", "error", err.Error())
+		common.Debug("enrich datastore", "error", err.Error())
 		// Don't fail if enrichment fails - return basic info anyway
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedDatastores)
+	formatted, err := presenter.FormatAsJSON(enrichedDatastore)
 	if err != nil {
 		return common.WrapError(err, "failed to format datastore info")
 	}
@@ -64,7 +83,7 @@ func (d *DatastoreInspect) Execute() error {
 }
 
 // gatherDatastores gathers basic datastore information
-func (d *DatastoreInspect) gatherDatastores(mgr *utils.SSHManager) ([]inspects.DatastoreInfo, error) {
+func (d *DatastoreInspect) gatherDatastores(mgr *utils.SSHManager) ([]config.DatastoreInfo, error) {
 	// Query datastores using esxcli
 	output, err := mgr.RunCommand("esxcli storage filesystem list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
@@ -75,8 +94,8 @@ func (d *DatastoreInspect) gatherDatastores(mgr *utils.SSHManager) ([]inspects.D
 }
 
 // parseDatastoreListing parses esxcli datastore output
-func (d *DatastoreInspect) parseDatastoreListing(output string) []inspects.DatastoreInfo {
-	var datastores []inspects.DatastoreInfo
+func (d *DatastoreInspect) parseDatastoreListing(output string) []config.DatastoreInfo {
+	var datastores []config.DatastoreInfo
 
 	lines := strings.Split(output, "\n")
 	var currentMount string
@@ -99,7 +118,7 @@ func (d *DatastoreInspect) parseDatastoreListing(output string) []inspects.Datas
 			currentType = strings.TrimSpace(strings.TrimPrefix(line, "Type:"))
 
 			if currentMount != "" {
-				ds := inspects.DatastoreInfo{
+				ds := config.DatastoreInfo{
 					Name:      currentUUID,
 					Path:      currentPath,
 					Type:      currentType,
@@ -122,37 +141,35 @@ func (d *DatastoreInspect) parseDatastoreListing(output string) []inspects.Datas
 	return datastores
 }
 
-// enrichDatastoresWithMetadata queries additional datastore metadata
-func (d *DatastoreInspect) enrichDatastoresWithMetadata(mgr *utils.SSHManager, datastores []inspects.DatastoreInfo) ([]inspects.DatastoreInfo, error) {
-	for idx, ds := range datastores {
-		if ds.UUID == "" {
-			continue
-		}
+// enrichDatastoreWithMetadata queries additional datastore metadata for a single datastore
+func (d *DatastoreInspect) enrichDatastoreWithMetadata(mgr *utils.SSHManager, ds config.DatastoreInfo) (config.DatastoreInfo, error) {
+	if ds.UUID == "" {
+		return ds, nil
+	}
 
-		// Query detailed info using esxcli
-		detailCmd := fmt.Sprintf("esxcli storage filesystem info -l '%s' 2>/dev/null", ds.UUID)
-		detailOutput, _ := mgr.RunCommand(detailCmd)
+	// Query detailed info using esxcli
+	detailCmd := fmt.Sprintf("esxcli storage filesystem info -l '%s' 2>/dev/null", ds.UUID)
+	detailOutput, _ := mgr.RunCommand(detailCmd)
 
-		if detailOutput != "" {
-			// Parse detailed information
-			datastores[idx] = d.parseDatastoreDetail(datastores[idx], detailOutput)
-		}
+	if detailOutput != "" {
+		// Parse detailed information
+		ds = d.parseDatastoreDetail(ds, detailOutput)
+	}
 
-		// Get capacity info using df
-		if ds.Path != "" {
-			dfCmd := fmt.Sprintf("df -h %s 2>/dev/null | tail -1", ds.Path)
-			dfOutput, _ := mgr.RunCommand(dfCmd)
-			if dfOutput != "" {
-				datastores[idx] = d.parseDatastoreCapacity(datastores[idx], dfOutput)
-			}
+	// Get capacity info using df
+	if ds.Path != "" {
+		dfCmd := fmt.Sprintf("df -h %s 2>/dev/null | tail -1", ds.Path)
+		dfOutput, _ := mgr.RunCommand(dfCmd)
+		if dfOutput != "" {
+			ds = d.parseDatastoreCapacity(ds, dfOutput)
 		}
 	}
 
-	return datastores, nil
+	return ds, nil
 }
 
 // parseDatastoreDetail parses detailed datastore information
-func (d *DatastoreInspect) parseDatastoreDetail(ds inspects.DatastoreInfo, output string) inspects.DatastoreInfo {
+func (d *DatastoreInspect) parseDatastoreDetail(ds config.DatastoreInfo, output string) config.DatastoreInfo {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -220,7 +237,7 @@ func (d *DatastoreInspect) parseDatastoreDetail(ds inspects.DatastoreInfo, outpu
 }
 
 // parseDatastoreCapacity parses df output for capacity information
-func (d *DatastoreInspect) parseDatastoreCapacity(ds inspects.DatastoreInfo, dfOutput string) inspects.DatastoreInfo {
+func (d *DatastoreInspect) parseDatastoreCapacity(ds config.DatastoreInfo, dfOutput string) config.DatastoreInfo {
 	fields := strings.Fields(dfOutput)
 	if len(fields) < 4 {
 		return ds
