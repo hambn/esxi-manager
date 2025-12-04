@@ -1,4 +1,4 @@
-package virtualmachines
+package inspect
 
 import (
 	"encoding/json"

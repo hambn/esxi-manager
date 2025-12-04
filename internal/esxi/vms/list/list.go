@@ -1,4 +1,4 @@
-package virtualmachines
+package list
 
 import (
 	"fmt"
