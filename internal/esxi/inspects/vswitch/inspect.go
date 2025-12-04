@@ -1,0 +1,325 @@
+package vswitch
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/inspects"
+	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
+	"github.com/esxi-manager/esxi-manager/internal/presenter"
+)
+
+// VSwitchInspect represents the vswitch inspect command
+type VSwitchInspect struct {
+	params *config.Params
+}
+
+// NewVSwitchInspect creates a new vswitch inspect command instance
+func NewVSwitchInspect(params *config.Params) *VSwitchInspect {
+	return &VSwitchInspect{params: params}
+}
+
+// Validate checks that required parameters are present
+func (v *VSwitchInspect) Validate() error {
+	return nil
+}
+
+// Execute gathers and outputs comprehensive vswitch information as JSON
+func (v *VSwitchInspect) Execute() error {
+	mgr, err := utils.NewSSHManager(v.params)
+	if err != nil {
+		return common.NewConnectionError(v.params.ESXiHostURI, "failed to create SSH manager", err)
+	}
+	defer mgr.Close()
+
+	if err := mgr.Connect(); err != nil {
+		return common.NewConnectionError(v.params.ESXiHostURI, "failed to connect", err)
+	}
+
+	// Get all vswitches
+	vswitches, err := v.gatherVSwitches(mgr)
+	if err != nil {
+		return err
+	}
+
+	// Enrich vswitches with policies
+	enrichedVSwitches, err := v.enrichVSwitchesWithPolicies(mgr, vswitches)
+	if err != nil {
+		common.Debug("enrich vswitches", "error", err.Error())
+		// Don't fail if enrichment fails
+	}
+
+	// Format as JSON
+	formatted, err := presenter.FormatAsJSON(enrichedVSwitches)
+	if err != nil {
+		return common.WrapError(err, "failed to format vswitch info")
+	}
+
+	fmt.Println(formatted)
+	return nil
+}
+
+// gatherVSwitches gathers vswitch information
+func (v *VSwitchInspect) gatherVSwitches(mgr *utils.SSHManager) ([]inspects.VSwitchInfo, error) {
+	output, err := mgr.RunCommand("esxcli network vswitch standard list 2>/dev/null")
+	if err != nil || strings.TrimSpace(output) == "" {
+		return nil, fmt.Errorf("failed to query vswitches: %w", err)
+	}
+
+	return v.parseVSwitchListing(output), nil
+}
+
+// parseVSwitchListing parses esxcli vswitch output
+func (v *VSwitchInspect) parseVSwitchListing(output string) []inspects.VSwitchInfo {
+	var vswitches []inspects.VSwitchInfo
+	var currentVSwitch inspects.VSwitchInfo
+	var inVSwitch bool
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if inVSwitch && currentVSwitch.Name != "" {
+				vswitches = append(vswitches, currentVSwitch)
+				currentVSwitch = inspects.VSwitchInfo{}
+				inVSwitch = false
+			}
+			continue
+		}
+
+		if !inVSwitch && strings.HasPrefix(line, "Name:") {
+			inVSwitch = true
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				currentVSwitch.Name = strings.TrimSpace(parts[1])
+			}
+		} else if inVSwitch {
+			if strings.HasPrefix(line, "Type:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					currentVSwitch.Type = strings.TrimSpace(parts[1])
+				}
+			} else if strings.HasPrefix(line, "Port groups:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &currentVSwitch.PortGroupCount)
+				}
+			} else if strings.HasPrefix(line, "Uplinks:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					uplinksStr := strings.TrimSpace(parts[1])
+					if uplinksStr != "" && uplinksStr != "Unknown" {
+						currentVSwitch.Uplinks = strings.FieldsFunc(uplinksStr, func(r rune) bool {
+							return r == ',' || r == ' '
+						})
+					}
+				}
+			} else if strings.HasPrefix(line, "MTU:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &currentVSwitch.MTU)
+				}
+			} else if strings.HasPrefix(line, "Ports:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					portStr := strings.TrimSpace(parts[1])
+					parsePortsField(portStr, &currentVSwitch.Ports, &currentVSwitch.AvailablePorts)
+				}
+			} else if strings.HasPrefix(line, "Link discovery:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					currentVSwitch.LinkDiscovery = strings.TrimSpace(parts[1])
+				}
+			} else if strings.HasPrefix(line, "Attached VMs:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					vmsStr := strings.TrimSpace(parts[1])
+					parseVMsField(vmsStr, &currentVSwitch.AttachedVMs, &currentVSwitch.ActiveVMs)
+				}
+			}
+		}
+	}
+
+	if inVSwitch && currentVSwitch.Name != "" {
+		vswitches = append(vswitches, currentVSwitch)
+	}
+
+	return vswitches
+}
+
+// enrichVSwitchesWithPolicies queries security, teaming, and shaping policies
+func (v *VSwitchInspect) enrichVSwitchesWithPolicies(mgr *utils.SSHManager, vswitches []inspects.VSwitchInfo) ([]inspects.VSwitchInfo, error) {
+	for idx, vs := range vswitches {
+		if vs.Name == "" {
+			continue
+		}
+
+		// Query security policy
+		securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vs.Name)
+		secOutput, _ := mgr.RunCommand(securityCmd)
+		if secOutput != "" {
+			vswitches[idx].Security = v.parseSecurityPolicy(secOutput)
+		}
+
+		// Query NIC teaming policy
+		teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vs.Name)
+		teamOutput, _ := mgr.RunCommand(teamingCmd)
+		if teamOutput != "" {
+			vswitches[idx].NICTeaming = v.parseTeamingPolicy(teamOutput)
+		}
+
+		// Query shaping policy
+		shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vs.Name)
+		shapOutput, _ := mgr.RunCommand(shapingCmd)
+		if shapOutput != "" {
+			vswitches[idx].Shaping = v.parseShapingPolicy(shapOutput)
+		}
+	}
+
+	return vswitches, nil
+}
+
+// parseSecurityPolicy extracts security policy from esxcli output
+func (v *VSwitchInspect) parseSecurityPolicy(output string) *inspects.SecurityPolicy {
+	policy := &inspects.SecurityPolicy{}
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "Promiscuous") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.AllowPromiscuous = val == "Yes" || val == "true" || val == "1"
+			}
+		} else if strings.Contains(line, "Forged") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.AllowForgedTx = val == "Yes" || val == "true" || val == "1"
+			}
+		} else if strings.Contains(line, "MAC") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.AllowMACChanges = val == "Yes" || val == "true" || val == "1"
+			}
+		}
+	}
+
+	return policy
+}
+
+// parseTeamingPolicy extracts teaming policy from esxcli output
+func (v *VSwitchInspect) parseTeamingPolicy(output string) *inspects.NICTeamingPolicy {
+	policy := &inspects.NICTeamingPolicy{}
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "Notify") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.NotifySwitches = val == "Yes" || val == "true" || val == "1"
+			}
+		} else if strings.Contains(line, "Policy") && strings.Contains(line, ":") && !strings.Contains(line, "Reverse") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				policy.Policy = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Reverse") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.ReversePolicy = val == "Yes" || val == "true" || val == "1"
+			}
+		} else if strings.Contains(line, "Failback") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.Failback = val == "Yes" || val == "true" || val == "1"
+			}
+		}
+	}
+
+	return policy
+}
+
+// parseShapingPolicy extracts shaping policy from esxcli output
+func (v *VSwitchInspect) parseShapingPolicy(output string) *inspects.ShapingPolicy {
+	policy := &inspects.ShapingPolicy{}
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "Enabled") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				policy.Enabled = val == "Yes" || val == "true" || val == "1"
+			}
+		}
+	}
+
+	return policy
+}
+
+// parsePortsField parses "Ports: 1536 (1529 available)" format
+func parsePortsField(portsStr string, totalPorts, availablePorts *int) {
+	if portsStr == "" {
+		return
+	}
+
+	// Extract total ports
+	var total int
+	if _, err := fmt.Sscanf(portsStr, "%d", &total); err == nil && total > 0 {
+		*totalPorts = total
+	}
+
+	// Extract available ports from (XXXX available)
+	if idx := strings.Index(portsStr, "("); idx != -1 {
+		endIdx := strings.Index(portsStr[idx:], ")")
+		if endIdx != -1 {
+			availStr := portsStr[idx+1 : idx+endIdx]
+			var avail int
+			if _, err := fmt.Sscanf(availStr, "%d", &avail); err == nil && avail > 0 {
+				*availablePorts = avail
+			}
+		}
+	}
+}
+
+// parseVMsField parses "X (Y active)" format for attached VMs
+func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
+	if vmsStr == "" {
+		return
+	}
+
+	// Extract total VMs
+	var total int
+	if _, err := fmt.Sscanf(vmsStr, "%d", &total); err == nil && total > 0 {
+		*totalVMs = total
+	}
+
+	// Extract active VMs from (X active)
+	if idx := strings.Index(vmsStr, "("); idx != -1 {
+		endIdx := strings.Index(vmsStr[idx:], ")")
+		if endIdx != -1 {
+			activeStr := vmsStr[idx+1 : idx+endIdx]
+			var active int
+			if _, err := fmt.Sscanf(activeStr, "%d", &active); err == nil && active >= 0 {
+				*activeVMs = active
+			}
+		}
+	}
+}
+
+// Register registers the vswitch-inspect command
+func init() {
+	config.Register("vswitch-inspect", func(params *config.Params) config.CommandInterface {
+		return NewVSwitchInspect(params)
+	})
+}
