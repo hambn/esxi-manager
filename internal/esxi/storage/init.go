@@ -4,5 +4,7 @@ package storage
 // which triggers their init() functions for command registration
 
 import (
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage/adapters"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage/datastore"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/storage/devices"
 )

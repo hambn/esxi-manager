@@ -242,3 +242,128 @@ type ExtentInfo struct {
 	Path    string `json:"path"`
 }
 
+// ============================================================================
+// STORAGE TYPES
+// ============================================================================
+
+// StorageAdapterInfo holds storage adapter information
+type StorageAdapterInfo struct {
+	Name        string `json:"name"`
+	Driver      string `json:"driver,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Vendor      string `json:"vendor,omitempty"`
+	Status      string `json:"status,omitempty"`
+	PathCount   int    `json:"path_count,omitempty"`
+	Queue       int    `json:"queue_length,omitempty"`
+	Bus         string `json:"bus,omitempty"`
+	Slot        string `json:"slot,omitempty"`
+	Target      string `json:"target,omitempty"`
+	LUN         string `json:"lun,omitempty"`
+}
+
+// StorageDeviceInfo holds storage device/disk information
+type StorageDeviceInfo struct {
+	Name              string `json:"name"`
+	DisplayName       string `json:"display_name,omitempty"`
+	Size              int64  `json:"size_bytes,omitempty"`
+	SizeGB            string `json:"size_gb,omitempty"`
+	Vendor            string `json:"vendor,omitempty"`
+	Model             string `json:"model,omitempty"`
+	SerialNumber      string `json:"serial_number,omitempty"`
+	Status            string `json:"status,omitempty"`
+	Type              string `json:"type,omitempty"` // SSD, HDD, Unknown
+	LocalDisk         bool   `json:"local_disk,omitempty"`
+	PhysicalLocation  string `json:"physical_location,omitempty"`
+	ScsiLevel         int    `json:"scsi_level,omitempty"`
+	MaxQueueDepth     int    `json:"max_queue_depth,omitempty"`
+	SectorSize        int    `json:"sector_size,omitempty"`
+	LUN               string `json:"lun,omitempty"`
+	Adapter           string `json:"adapter,omitempty"`
+	DevfsPath         string `json:"devfs_path,omitempty"`
+}
+
+// NVDimmInfo holds NVDIMM (Non-Volatile DIMM) information
+type NVDimmInfo struct {
+	DimmID            string `json:"dimm_id"`
+	Health            string `json:"health,omitempty"`
+	HealthStatus      string `json:"health_status,omitempty"`
+	Capacity          int64  `json:"capacity_bytes,omitempty"`
+	CapacityGB        string `json:"capacity_gb,omitempty"`
+	Location          string `json:"location,omitempty"`
+	ProductName       string `json:"product_name,omitempty"`
+	ManufacturerID    string `json:"manufacturer_id,omitempty"`
+	FirmwareVersion   string `json:"firmware_version,omitempty"`
+	VoltaileSize      int64  `json:"volatile_size_bytes,omitempty"`
+	PersistentSize    int64  `json:"persistent_size_bytes,omitempty"`
+	ActionRequired    bool   `json:"action_required,omitempty"`
+	Temperature       int    `json:"temperature_celsius,omitempty"`
+	PowerLoss         bool   `json:"power_loss_protection,omitempty"`
+}
+
+// ============================================================================
+// NETWORKING TYPES
+// ============================================================================
+
+// VMKnicInfo holds virtual machine kernel NIC information
+type VMKnicInfo struct {
+	Name           string `json:"name"`
+	Enabled        bool   `json:"enabled,omitempty"`
+	Portgroup      string `json:"portgroup,omitempty"`
+	MAC            string `json:"mac_address,omitempty"`
+	IPv4Address    string `json:"ipv4_address,omitempty"`
+	IPv4Netmask    string `json:"ipv4_netmask,omitempty"`
+	IPv4Gateway    string `json:"ipv4_gateway,omitempty"`
+	IPv6Address    string `json:"ipv6_address,omitempty"`
+	IPv6Prefix     string `json:"ipv6_prefix,omitempty"`
+	IPv4DHCP       bool   `json:"ipv4_dhcp,omitempty"`
+	IPv6DHCP       bool   `json:"ipv6_dhcp,omitempty"`
+	MTU            int    `json:"mtu,omitempty"`
+	Speed          string `json:"speed,omitempty"`
+	Duplex         string `json:"duplex,omitempty"`
+	LinkStatus     string `json:"link_status,omitempty"`
+	VLANID         int    `json:"vlan_id,omitempty"`
+	VSwitch        string `json:"vswitch,omitempty"`
+}
+
+// NetworkStackInfo holds network stack information
+type NetworkStackInfo struct {
+	Name               string `json:"name"`
+	Instance           int    `json:"instance,omitempty"`
+	MaximumMTU         int    `json:"maximum_mtu,omitempty"`
+	Enabled            bool   `json:"enabled,omitempty"`
+	VMotionEnabled     bool   `json:"vmotion_enabled,omitempty"`
+	ProvisioningEnabled bool  `json:"provisioning_enabled,omitempty"`
+	DNSResolver        string `json:"dns_resolver,omitempty"`
+	IPRouting          bool   `json:"ip_routing_enabled,omitempty"`
+}
+
+// FirewallRuleInfo holds individual firewall rule information
+type FirewallRuleInfo struct {
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled,omitempty"`
+	Inbound     bool   `json:"inbound,omitempty"`
+	Outbound    bool   `json:"outbound,omitempty"`
+	Protocol    string `json:"protocol,omitempty"`
+	Direction   string `json:"direction,omitempty"`
+	PortType    string `json:"port_type,omitempty"`
+	AllPorts    bool   `json:"all_ports,omitempty"`
+	BeginPort   int    `json:"begin_port,omitempty"`
+	EndPort     int    `json:"end_port,omitempty"`
+	SourceIP    string `json:"source_ip,omitempty"`
+	DestIP      string `json:"dest_ip,omitempty"`
+	SourceMask  string `json:"source_mask,omitempty"`
+	DestMask    string `json:"dest_mask,omitempty"`
+}
+
+// FirewallInfo holds firewall configuration information
+type FirewallInfo struct {
+	Name               string `json:"name"`
+	DefaultInbound     string `json:"default_inbound,omitempty"` // allow, deny, etc.
+	DefaultOutbound    string `json:"default_outbound,omitempty"`
+	Enabled            bool   `json:"enabled,omitempty"`
+	LoadedRuleCount    int    `json:"loaded_rule_count,omitempty"`
+	EnabledRuleCount   int    `json:"enabled_rule_count,omitempty"`
+	Rules              []FirewallRuleInfo `json:"rules,omitempty"`
+}
+

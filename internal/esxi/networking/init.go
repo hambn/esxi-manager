@@ -7,4 +7,5 @@ import (
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/vswitch"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/portgroup"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/network"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/vmknics"
 )
