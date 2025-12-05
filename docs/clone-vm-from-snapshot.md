@@ -166,6 +166,32 @@ This creates a VM with 3 network adapters:
 - ethernet1 → mgmt-network
 - ethernet2 → backup-network
 
+### Portgroup Names with Spaces
+
+Due to limitations in Go's command-line flag parsing, portgroup names containing spaces (like "VM Network") require special handling:
+
+**Recommended Solution:** Avoid using spaces in portgroup names in your vSphere environment. Use underscores or hyphens instead:
+- `prod_network` or `prod-network` instead of `prod network`
+- `mgmt_network` or `mgmt-network` instead of `mgmt network`
+
+**Alternative Solution:** If you must use portgroups with spaces, use the network inheritance feature by omitting the `--dest-network-list` flag:
+
+```bash
+./esxi-manager \
+  --command=clone-vm-from-snapshot \
+  --esxi-host-uri=192.168.1.100 \
+  --esxi-host-username=root \
+  --esxi-host-password='password' \
+  --source-vm-name=template-vm \
+  --snapshot-name=production \
+  --dest-vm-name=new-server \
+  --dest-vm-disk-store=datastore1 \
+  --dest-vm-cpu=4 \
+  --dest-vm-ram=8192
+```
+
+When `--dest-network-list` is omitted, the cloned VM will automatically inherit all portgroups from the source VM, even if they contain spaces.
+
 ## Output Format
 
 The command returns JSON with the following structure:
