@@ -51,25 +51,18 @@ func (c *ListPortGroupsCommand) parsePortGroups(output string) []PortGroupInfo {
 			continue
 		}
 
-		// The output format has fixed column positions:
-		// Name (up to ~19 chars), VSwitch (~15 chars), ActiveClients (~14 chars), VLANID
-		// We need to handle names with spaces, so we look for the pattern
-
-		// Try to find vswitch and active clients using regex or column positions
-		// For now, use a simpler approach: split on multiple spaces to get meaningful fields
 		fields := strings.Fields(line)
 		if len(fields) < 4 {
 			continue
 		}
 
-		// The last two fields are always ActiveClients (number) and VLANID (number)
-		// VSwitch is typically a single word (vSwitch0, vSwitch-test-01, etc.)
+		// Last 3 fields are: VLANID, ActiveClients, VSwitch (in reverse order from the end)
+		// Everything before that is the port group name (may have spaces)
+		// Use shared parser to extract multi-word name
 		vlanID := fields[len(fields)-1]
 		activeClients := fields[len(fields)-2]
 		vswitch := fields[len(fields)-3]
-
-		// Everything before the vswitch is the name
-		name := strings.Join(fields[:len(fields)-3], " ")
+		name := utils.ParseMultiWordName(fields, 3)
 
 		pg := PortGroupInfo{
 			Name:          name,

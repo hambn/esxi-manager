@@ -45,55 +45,59 @@ func (c *ListVSwitchesCommand) Execute() error {
 
 func (c *ListVSwitchesCommand) parseVSwitches(output string) []VSwitchInfo {
 	var vswitches []VSwitchInfo
-
-	// Parse output line by line - each vswitch entry is multi-line
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
 	var currentSwitch *VSwitchInfo
 
+	// Use shared parser for multi-line key-value format
+	// recordFunc: called when a new unindented line is found (new record/switch)
+	recordFunc := func() {
+		if currentSwitch != nil {
+			vswitches = append(vswitches, *currentSwitch)
+		}
+	}
+
+	// parseFunc: called for each key-value pair in indented lines
+	parseFunc := func(key, value string) {
+		if currentSwitch != nil {
+			switch key {
+			case "Num Ports":
+				currentSwitch.NumPorts = value
+			case "Used Ports":
+				currentSwitch.UsedPorts = value
+			case "MTU":
+				currentSwitch.MTU = value
+			case "Uplinks":
+				currentSwitch.Uplinks = value
+			case "Portgroups":
+				currentSwitch.PortGroups = value
+			}
+		}
+	}
+
+	// Process each line manually to handle switch name initialization
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
 
-		// Lines starting with vSwitch name (not indented) mark a new switch
-		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-			if currentSwitch != nil {
-				vswitches = append(vswitches, *currentSwitch)
-			}
-			currentSwitch = &VSwitchInfo{
-				Name: trimmed,
-			}
-		} else if currentSwitch != nil {
-			// Parse indented fields with key: value format
-			if strings.Contains(trimmed, ":") {
-				parts := strings.SplitN(trimmed, ":", 2)
-				if len(parts) == 2 {
-					key := strings.TrimSpace(parts[0])
-					value := strings.TrimSpace(parts[1])
-
-					switch key {
-					case "Num Ports":
-						currentSwitch.NumPorts = value
-					case "Used Ports":
-						currentSwitch.UsedPorts = value
-					case "MTU":
-						currentSwitch.MTU = value
-					case "Uplinks":
-						currentSwitch.Uplinks = value
-					case "Portgroups":
-						currentSwitch.PortGroups = value
-					}
-				}
+		// Check if this is an unindented line (new switch)
+		if !utils.IsLineIndented(line) {
+			// Save previous switch and start new one
+			recordFunc()
+			currentSwitch = &VSwitchInfo{Name: trimmed}
+		} else if currentSwitch != nil && strings.Contains(trimmed, ":") {
+			// Parse key-value pair
+			key, value, ok := utils.ParseKeyValueLine(trimmed)
+			if ok {
+				parseFunc(key, value)
 			}
 		}
 	}
 
 	// Don't forget the last switch
-	if currentSwitch != nil {
-		vswitches = append(vswitches, *currentSwitch)
-	}
+	recordFunc()
 
 	return vswitches
 }
