@@ -1,4 +1,4 @@
-package datastore
+package datastores
 
 import (
 	"fmt"
@@ -17,18 +17,11 @@ type Datastore struct {
 	Mounted    string
 }
 
-type ListDatastoresCommand struct {
-	params *config.Params
-}
-
-func (c *ListDatastoresCommand) Validate() error {
-	return nil
-}
-
-func (c *ListDatastoresCommand) Execute() (string, error) {
-	manager, err := utils.NewSSHManager(c.params)
+// listStorageDatastores lists all datastores on the ESXi host
+func listStorageDatastores(params *config.Params) (string, error) {
+	manager, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", err
 	}
 	defer manager.Close()
 
@@ -37,11 +30,6 @@ func (c *ListDatastoresCommand) Execute() (string, error) {
 		return "", fmt.Errorf("failed to list datastores: %w", err)
 	}
 
-	datastores := c.parseDatastores(output)
-	return c.formatDatastores(datastores)
-}
-
-func (c *ListDatastoresCommand) parseDatastores(output string) []Datastore {
 	var datastores []Datastore
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
@@ -67,14 +55,6 @@ func (c *ListDatastoresCommand) parseDatastores(output string) []Datastore {
 		datastores = append(datastores, ds)
 	}
 
-	return datastores
-}
-
-func (c *ListDatastoresCommand) formatDatastores(datastores []Datastore) (string, error) {
-	if len(datastores) == 0 {
-		// Return empty JSON array
-		return utils.FormatAsJSON([]Datastore{})
-	}
 	return utils.FormatAsJSON(datastores)
 }
 
@@ -84,7 +64,5 @@ func toInt64(s string) int64 {
 }
 
 func init() {
-	config.Register("list-datastores", func(params *config.Params) config.CommandInterface {
-		return &ListDatastoresCommand{params: params}
-	})
+	config.RegisterFunc("list-storage-datastores", listStorageDatastores)
 }

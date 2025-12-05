@@ -185,9 +185,18 @@ func (i *InspectStorageAdapter) parseAdapterTargets(adapter *config.StorageAdapt
 	}
 }
 
-// Register registers the inspect-storage-adapter command
+// inspectStorageAdapters inspects storage adapters
+func inspectStorageAdapters(params *config.Params) (string, error) {
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	cmd := NewInspectStorageAdapter(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("inspect-storage-adapter", func(params *config.Params) config.CommandInterface {
-		return NewInspectStorageAdapter(params)
-	})
+	config.RegisterFunc("inspect-storage-adapters", inspectStorageAdapters)
 }

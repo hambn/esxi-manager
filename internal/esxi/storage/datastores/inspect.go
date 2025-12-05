@@ -1,4 +1,4 @@
-package datastore
+package datastores
 
 import (
 	"fmt"
@@ -280,9 +280,23 @@ func parseSizeValue(sizeStr string, target *int64) {
 	*target = int64(size * float64(multiplier))
 }
 
-// Register registers the datastore-inspect command
+// inspectStorageDatastores inspects a specific datastore with comprehensive details
+func inspectStorageDatastores(params *config.Params) (string, error) {
+	if params.DatastoreName == "" {
+		return "", fmt.Errorf("--datastore-name parameter is required for inspect-storage-datastores")
+	}
+
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	// Use existing implementation
+	cmd := NewDatastoreInspect(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("datastore-inspect", func(params *config.Params) config.CommandInterface {
-		return NewDatastoreInspect(params)
-	})
+	config.RegisterFunc("inspect-storage-datastores", inspectStorageDatastores)
 }

@@ -153,9 +153,18 @@ func (l *ListStorageDevices) parseDeviceDetail(device *config.StorageDeviceInfo,
 	}
 }
 
-// Register registers the list-storage-devices command
+// listStorageDevices lists all storage devices
+func listStorageDevices(params *config.Params) (string, error) {
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	cmd := NewListStorageDevices(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("list-storage-devices", func(params *config.Params) config.CommandInterface {
-		return NewListStorageDevices(params)
-	})
+	config.RegisterFunc("list-storage-devices", listStorageDevices)
 }

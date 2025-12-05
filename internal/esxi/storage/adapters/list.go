@@ -142,9 +142,18 @@ func (l *ListStorageAdapters) parseAdapterDetail(adapter *config.StorageAdapterI
 	}
 }
 
-// Register registers the list-storage-adapters command
+// listStorageAdapters lists all storage adapters
+func listStorageAdapters(params *config.Params) (string, error) {
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	cmd := NewListStorageAdapters(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("list-storage-adapters", func(params *config.Params) config.CommandInterface {
-		return NewListStorageAdapters(params)
-	})
+	config.RegisterFunc("list-storage-adapters", listStorageAdapters)
 }

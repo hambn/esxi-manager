@@ -121,9 +121,18 @@ func (i *InspectStorageDevice) parseDeviceFullDetail(device *config.StorageDevic
 	}
 }
 
-// Register registers the inspect-storage-device command
+// inspectStorageDevices inspects storage devices
+func inspectStorageDevices(params *config.Params) (string, error) {
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	cmd := NewInspectStorageDevice(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("inspect-storage-device", func(params *config.Params) config.CommandInterface {
-		return NewInspectStorageDevice(params)
-	})
+	config.RegisterFunc("inspect-storage-devices", inspectStorageDevices)
 }
