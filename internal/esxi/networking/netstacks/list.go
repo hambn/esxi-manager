@@ -10,9 +10,9 @@ import (
 
 // NetworkStack represents a network stack with its configuration
 type NetworkStack struct {
-	Name        string `json:"name"`
-	IPv4Gateway string `json:"ipv4_gateway"`
-	IPv6Gateway string `json:"ipv6_gateway"`
+	Name         string `json:"name"`
+	IPv4Gateway  string `json:"ipv4_gateway"`
+	IPv6Gateway  string `json:"ipv6_gateway"`
 	PreferredDNS string `json:"preferred_dns"`
 	AlternateDNS string `json:"alternate_dns"`
 }
@@ -25,64 +25,38 @@ func listNetworkingNetstacks(params *config.Params) (string, error) {
 	}
 	defer mgr.Close()
 
-	// Known network stack names mapping to display names
-	stackNames := map[string]string{
-		"defaultTcpipStack": "Default TCP/IP stack",
-		"vmotion":           "vMotion stack",
-		"provisioning":      "Provisioning stack",
-		"ops":               "ops",
-		"mirror":            "mirror",
-	}
-
-	stackOrder := []string{
-		"defaultTcpipStack",
-		"vmotion",
-		"provisioning",
-		"ops",
-		"mirror",
-	}
-
-	// Get list of existing stacks
+	// Get list of network stacks
 	output, err := mgr.RunCommand("esxcli network ip netstack list 2>/dev/null")
-	existingStacks := make(map[string]bool)
-	if err == nil && strings.TrimSpace(output) != "" {
-		lines := strings.Split(output, "\n")
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && !strings.Contains(trimmed, ":") {
-				existingStacks[trimmed] = true
-			}
-		}
+	if err != nil || strings.TrimSpace(output) == "" {
+		return utils.FormatAsJSON([]NetworkStack{})
 	}
 
 	var stacks []NetworkStack
+	lines := strings.Split(output, "\n")
 
-	// Check all known stacks in order
-	for _, stackKey := range stackOrder {
+	// Parse netstack names - they are non-indented lines that don't contain ":"
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.Contains(trimmed, ":") {
+			continue
+		}
+
 		stack := NetworkStack{
-			Name:        stackNames[stackKey],
-			IPv4Gateway: "--",
-			IPv6Gateway: "--",
+			Name:         trimmed,
+			IPv4Gateway:  getIPv4Gateway(mgr, trimmed),
+			IPv6Gateway:  getIPv6Gateway(mgr, trimmed),
 			PreferredDNS: "--",
 			AlternateDNS: "--",
 		}
 
-		// Only query if stack exists
-		if existingStacks[stackKey] {
-			stack.IPv4Gateway = getIPv4Gateway(mgr, stackKey)
-			stack.IPv6Gateway = getIPv6Gateway(mgr, stackKey)
-			stack.PreferredDNS, stack.AlternateDNS = getDNSServers(mgr, stackKey)
-		}
+		// Get DNS servers
+		stack.PreferredDNS, stack.AlternateDNS = getDNSServers(mgr, trimmed)
 
 		stacks = append(stacks, stack)
 	}
 
 	// Return as JSON
-	jsonData, err := json.MarshalIndent(stacks, "", "  ")
-	if err != nil {
-		return utils.FormatAsJSON(stacks)
-	}
-
+	jsonData, _ := json.MarshalIndent(stacks, "", "  ")
 	return string(jsonData), nil
 }
 
