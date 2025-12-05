@@ -7,7 +7,7 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// listNetworkingNetstacks lists all network stacks on the ESXi host
+// listNetworkingNetstacks lists all network stacks on the ESXi host with gateway and DNS info
 func listNetworkingNetstacks(params *config.Params) (string, error) {
 	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
@@ -47,42 +47,69 @@ func listNetworkingNetstacks(params *config.Params) (string, error) {
 	return utils.FormatAsJSON(stacks)
 }
 
-// getNetstackDetails retrieves detailed configuration for a specific netstack
+// getNetstackDetails retrieves detailed configuration for a specific netstack including gateway and DNS
 func getNetstackDetails(mgr *utils.SSHManager, stackName string) (*config.NetworkStackInfo, error) {
-	output, err := mgr.RunCommand("esxcli network ip netstack get -N " + stackName + " 2>/dev/null")
-	if err != nil || strings.TrimSpace(output) == "" {
-		return nil, err
-	}
-
 	stack := &config.NetworkStackInfo{
 		Name: stackName,
 	}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || !strings.Contains(trimmed, ":") {
-			continue
+	// Get basic netstack info
+	output, err := mgr.RunCommand("esxcli network ip netstack get -N " + stackName + " 2>/dev/null")
+	if err == nil && strings.TrimSpace(output) != "" {
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || !strings.Contains(trimmed, ":") {
+				continue
+			}
+
+			parts := strings.SplitN(trimmed, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+
+			switch key {
+			case "Enabled":
+				stack.Enabled = val == "true" || val == "True"
+			}
 		}
+	}
 
-		// Parse key-value pairs
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			continue
+	// Get IPv4 gateway from routes
+	routeOutput, err := mgr.RunCommand("esxcli network ip route ipv4 list -N " + stackName + " 2>/dev/null")
+	if err == nil && strings.TrimSpace(routeOutput) != "" {
+		lines := strings.Split(routeOutput, "\n")
+		// Skip first 2 lines (header and separator)
+		for idx, line := range lines {
+			if idx < 2 {
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			// Format: Network Netmask Gateway Interface Source
+			// Look for "default" network to get the gateway
+			if len(fields) >= 3 && fields[0] == "default" {
+				stack.DNSResolver = fields[2] // Gateway is in 3rd field
+				break
+			}
 		}
+	}
 
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "Name":
-			stack.Name = val
-		case "Enabled":
-			stack.Enabled = val == "true" || val == "True"
-		case "Max Connections":
-			// Not directly mapped in NetworkStackInfo, but could be stored if needed
-		case "IPv6 Enabled":
-			// Could map to a new field if added to struct
+	// Get DNS servers
+	dnsOutput, err := mgr.RunCommand("esxcli network ip dns server list -N " + stackName + " 2>/dev/null")
+	if err == nil && strings.TrimSpace(dnsOutput) != "" {
+		// Format: DNSServers: 192.168.0.1, 114.114.114.114
+		if strings.Contains(dnsOutput, "DNSServers:") {
+			parts := strings.SplitN(dnsOutput, ":", 2)
+			if len(parts) == 2 {
+				stack.DNSResolver = strings.TrimSpace(parts[1])
+			}
 		}
 	}
 
