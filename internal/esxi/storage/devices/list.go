@@ -1,14 +1,13 @@
 package devices
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// listStorageDevices lists all storage devices with detailed information
+// listStorageDevices lists all storage devices
 func listStorageDevices(params *config.Params) (string, error) {
 	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
@@ -24,72 +23,44 @@ func listStorageDevices(params *config.Params) (string, error) {
 
 	var devices []config.StorageDeviceInfo
 	lines := strings.Split(output, "\n")
+	var currentDevice *config.StorageDeviceInfo
 
-	for idx, line := range lines {
-		if idx == 0 || strings.TrimSpace(line) == "" {
+	// Parse device listing - device names start with "mpx." and are not indented
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isIndented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+
+		if trimmed == "" {
 			continue
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		// Check if this is a device name line (starts with mpx. and not indented)
+		if !isIndented && strings.HasPrefix(trimmed, "mpx.") {
+			// Save previous device if any
+			if currentDevice != nil {
+				devices = append(devices, *currentDevice)
+			}
+			// Start new device
+			currentDevice = &config.StorageDeviceInfo{
+				Name: trimmed,
+			}
+		} else if !isIndented && currentDevice == nil {
+			// Skip header lines that aren't indented and aren't device names
 			continue
-		}
-
-		device := config.StorageDeviceInfo{
-			Name: fields[0],
-		}
-
-		// Query detailed device info
-		detailCmd := fmt.Sprintf("esxcli storage core device get -d '%s' 2>/dev/null", device.Name)
-		detailOutput, _ := mgr.RunCommand(detailCmd)
-
-		if detailOutput != "" {
-			detailLines := strings.Split(detailOutput, "\n")
-			for _, detailLine := range detailLines {
-				detailLine = strings.TrimSpace(detailLine)
-				if detailLine == "" {
-					continue
-				}
-
-				if strings.Contains(detailLine, "Display Name:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						device.DisplayName = strings.TrimSpace(parts[1])
-					}
-				} else if strings.Contains(detailLine, "Model:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						device.Model = strings.TrimSpace(parts[1])
-					}
-				} else if strings.Contains(detailLine, "Vendor:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						device.Vendor = strings.TrimSpace(parts[1])
-					}
-				} else if strings.Contains(detailLine, "Serial:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						device.SerialNumber = strings.TrimSpace(parts[1])
-					}
-				} else if strings.Contains(detailLine, "Revision:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						device.Type = strings.TrimSpace(parts[1])
-					}
-				} else if strings.Contains(detailLine, "Size:") {
-					parts := strings.SplitN(detailLine, ":", 2)
-					if len(parts) == 2 {
-						sizeStr := strings.TrimSpace(parts[1])
-						var sizeBytes int64
-						fmt.Sscanf(sizeStr, "%d", &sizeBytes)
-						device.Size = sizeBytes
-						device.SizeGB = fmt.Sprintf("%.2f GB", float64(sizeBytes)/1024/1024/1024)
-					}
+		} else if isIndented && currentDevice != nil {
+			// Parse detail line
+			if strings.HasPrefix(trimmed, "Display Name:") && !strings.Contains(trimmed, "Settable") {
+				parts := strings.SplitN(trimmed, ":", 2)
+				if len(parts) == 2 {
+					currentDevice.DisplayName = strings.TrimSpace(parts[1])
 				}
 			}
 		}
+	}
 
-		devices = append(devices, device)
+	// Don't forget the last device
+	if currentDevice != nil {
+		devices = append(devices, *currentDevice)
 	}
 
 	return utils.FormatAsJSON(devices)
