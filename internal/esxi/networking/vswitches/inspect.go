@@ -1,4 +1,4 @@
-package vswitch
+package vswitches
 
 import (
 	"fmt"

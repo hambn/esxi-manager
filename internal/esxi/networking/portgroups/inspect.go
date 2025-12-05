@@ -1,4 +1,4 @@
-package portgroup
+package portgroups
 
 import (
 	"fmt"
