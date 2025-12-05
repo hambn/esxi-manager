@@ -1,11 +1,72 @@
 package firewall
 
 import (
+	"encoding/json"
+	"encoding/xml"
 	"strings"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
+
+// FirewallService represents a firewall service from service.xml
+type FirewallService struct {
+	ID    string `xml:"id"`
+	Rules []struct {
+		Direction string `xml:"direction"`
+		Protocol  string `xml:"protocol"`
+		PortType  string `xml:"porttype"`
+		Port      string `xml:"port"`
+	} `xml:"rule"`
+	Enabled bool `xml:"enabled"`
+}
+
+// Friendly names mapping for firewall services
+var friendlyNames = map[string]string{
+	"sshServer":             "SSH Server",
+	"sshClient":             "SSH Client",
+	"dhcp":                  "DHCP Client",
+	"dns":                   "DNS",
+	"ntpClient":             "NTP Client",
+	"nfsClient":             "NFS Client",
+	"iSCSI":                 "iSCSI",
+	"vMotion":               "vMotion",
+	"vSphereClient":         "vSphere Client",
+	"webAccess":             "Web Access",
+	"updateManager":         "Update Manager",
+	"faultTolerance":        "Fault Tolerance",
+	"NFC":                   "NFC",
+	"HBR":                   "Host Backup and Restore",
+	"activeDirectoryAll":    "Active Directory",
+	"snmp":                  "SNMP",
+	"CIMHttpServer":         "CIM HTTP Server",
+	"CIMHttpsServer":        "CIM HTTPS Server",
+	"CIMSLP":                "CIM SLP",
+	"vpxHeartbeats":         "vCenter Heartbeats",
+	"ftpClient":             "FTP Client",
+	"httpClient":            "HTTP Client",
+	"gdbserver":             "GDB Server",
+	"DVFilter":              "DV Filter",
+	"DHCPv6":                "DHCP v6",
+	"DVSSync":               "DVS Sync",
+	"syslog":                "Syslog",
+	"WOL":                   "Wake On LAN",
+	"vSPC":                  "vSphere HA Servi",
+	"remoteSerialPort":      "Remote Serial Port",
+	"rdt":                   "Remote Desktop",
+	"cmmds":                 "CMMDS",
+}
+
+// RuleDetail represents a firewall rule with all details
+type RuleDetail struct {
+	Name           string `json:"name"`
+	Key            string `json:"key"`
+	IncomingPorts  string `json:"incoming_ports,omitempty"`
+	OutgoingPorts  string `json:"outgoing_ports,omitempty"`
+	Protocols      string `json:"protocols,omitempty"`
+	Service        string `json:"service,omitempty"`
+	Daemon         string `json:"daemon,omitempty"`
+}
 
 // listNetworkingFirewall lists all firewall rules on the ESXi host
 func listNetworkingFirewall(params *config.Params) (string, error) {
@@ -15,65 +76,83 @@ func listNetworkingFirewall(params *config.Params) (string, error) {
 	}
 	defer mgr.Close()
 
-	// Query firewall rules using esxcli
-	output, err := mgr.RunCommand("esxcli network firewall ruleset rule list 2>/dev/null")
-	if err != nil || strings.TrimSpace(output) == "" {
-		return utils.FormatAsJSON([]config.FirewallRuleInfo{})
+	// Read service.xml to get firewall rule details
+	xmlOutput, err := mgr.RunCommand("cat /etc/vmware/firewall/service.xml 2>/dev/null")
+	if err != nil || strings.TrimSpace(xmlOutput) == "" {
+		return utils.FormatAsJSON([]RuleDetail{})
 	}
 
-	var rules []config.FirewallRuleInfo
-	ruleMap := make(map[string]*config.FirewallRuleInfo)
-	lines := strings.Split(output, "\n")
+	// Parse XML
+	type ConfigRoot struct {
+		Services []FirewallService `xml:"service"`
+	}
 
-	// Skip header (first two lines: header and separator line "---  ---  ...")
-	for idx, line := range lines {
-		if idx < 2 || strings.TrimSpace(line) == "" {
-			continue
+	var config ConfigRoot
+	if err := xml.Unmarshal([]byte(xmlOutput), &config); err != nil {
+		return utils.FormatAsJSON([]RuleDetail{})
+	}
+
+	var rules []RuleDetail
+
+	// Process each service
+	for _, service := range config.Services {
+		rule := RuleDetail{
+			Key:     service.ID,
+			Service: "N/A",
+			Daemon:  "None",
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
-			continue
+		// Get friendly name or use service key
+		if friendlyName, exists := friendlyNames[service.ID]; exists {
+			rule.Name = friendlyName
+		} else {
+			rule.Name = service.ID
 		}
 
-		// Parse rule: Ruleset Direction Protocol PortType PortBegin PortEnd
-		rulesetName := fields[0]
-		direction := fields[1]
-		protocol := fields[2]
-		// portType := fields[3]
-		// portBegin := fields[4]
-		// portEnd := fields[5] if exists
+		// Extract ports and protocols from rules
+		var inboundPorts, outboundPorts []string
+		var protocols []string
+		protocolMap := make(map[string]bool)
 
-		// Create or update rule entry for this ruleset
-		if _, exists := ruleMap[rulesetName]; !exists {
-			ruleMap[rulesetName] = &config.FirewallRuleInfo{
-				Name: rulesetName,
+		for _, r := range service.Rules {
+			protocol := strings.ToUpper(r.Protocol)
+			if !protocolMap[protocol] {
+				protocols = append(protocols, protocol)
+				protocolMap[protocol] = true
+			}
+
+			// Extract port from port element (could be range with begin/end or single value)
+			port := strings.TrimSpace(r.Port)
+			if port != "" {
+				if r.Direction == "inbound" || r.Direction == "Inbound" {
+					inboundPorts = append(inboundPorts, port)
+				} else if r.Direction == "outbound" || r.Direction == "Outbound" {
+					outboundPorts = append(outboundPorts, port)
+				}
 			}
 		}
 
-		// Set direction and protocol flags
-		rule := ruleMap[rulesetName]
-		if direction == "Inbound" {
-			rule.Inbound = true
-		} else if direction == "Outbound" {
-			rule.Outbound = true
+		// Set ports and protocols
+		if len(inboundPorts) > 0 {
+			rule.IncomingPorts = strings.Join(inboundPorts, ", ")
+		}
+		if len(outboundPorts) > 0 {
+			rule.OutgoingPorts = strings.Join(outboundPorts, ", ")
+		}
+		if len(protocols) > 0 {
+			rule.Protocols = strings.Join(protocols, ", ")
 		}
 
-		if rule.Protocol == "" {
-			rule.Protocol = protocol
-		} else if !strings.Contains(rule.Protocol, protocol) {
-			rule.Protocol += ", " + protocol
-		}
-
-		rule.Direction = direction
+		rules = append(rules, rule)
 	}
 
-	// Convert map to slice
-	for _, rule := range ruleMap {
-		rules = append(rules, *rule)
+	// Convert to JSON manually to ensure proper output
+	jsonData, err := json.MarshalIndent(rules, "", "  ")
+	if err != nil {
+		return utils.FormatAsJSON(rules)
 	}
 
-	return utils.FormatAsJSON(rules)
+	return string(jsonData), nil
 }
 
 func init() {
