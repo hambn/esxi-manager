@@ -7,18 +7,11 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-type TestConnectionCommand struct {
-	params *config.Params
-}
-
-func (c *TestConnectionCommand) Validate() error {
-	return nil
-}
-
-func (c *TestConnectionCommand) Execute() (string, error) {
-	manager, err := utils.NewSSHManager(c.params)
+// testHostConnection tests the connection to the ESXi host
+func testHostConnection(params *config.Params) (string, error) {
+	manager, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", err
 	}
 	defer manager.Close()
 
@@ -30,7 +23,5 @@ func (c *TestConnectionCommand) Execute() (string, error) {
 }
 
 func init() {
-	config.Register("test-connection", func(params *config.Params) config.CommandInterface {
-		return &TestConnectionCommand{params: params}
-	})
+	config.RegisterFunc("test-host-connection", testHostConnection)
 }

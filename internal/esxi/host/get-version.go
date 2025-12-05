@@ -7,18 +7,11 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-type GetVersionCommand struct {
-	params *config.Params
-}
-
-func (c *GetVersionCommand) Validate() error {
-	return nil
-}
-
-func (c *GetVersionCommand) Execute() (string, error) {
-	manager, err := utils.NewSSHManager(c.params)
+// getHostVersion gets the ESXi host version
+func getHostVersion(params *config.Params) (string, error) {
+	manager, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", err
 	}
 	defer manager.Close()
 
@@ -31,7 +24,5 @@ func (c *GetVersionCommand) Execute() (string, error) {
 }
 
 func init() {
-	config.Register("get-version", func(params *config.Params) config.CommandInterface {
-		return &GetVersionCommand{params: params}
-	})
+	config.RegisterFunc("get-host-version", getHostVersion)
 }

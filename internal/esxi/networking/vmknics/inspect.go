@@ -4,74 +4,35 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// InspectVMKnic represents the inspect VM kernel NIC command
-type InspectVMKnic struct {
-	params *config.Params
-}
-
-// NewInspectVMKnic creates a new inspect VM kernel NIC command instance
-func NewInspectVMKnic(params *config.Params) *InspectVMKnic {
-	return &InspectVMKnic{params: params}
-}
-
-// Validate checks that required parameters are present
-func (i *InspectVMKnic) Validate() error {
-	if i.params.VMName == "" {
-		return fmt.Errorf("--vm-name parameter is required for inspect-vmknic (use interface name like vmk0)")
+// inspectNetworkingVmknics inspects a specific VM kernel NIC with detailed information
+func inspectNetworkingVmknics(params *config.Params) (string, error) {
+	if params.VMName == "" {
+		return "", fmt.Errorf("--vm-name parameter is required for inspect-networking-vmknics (use interface name like vmk0)")
 	}
-	return nil
-}
 
-// Execute gathers and outputs detailed VM kernel NIC information as JSON
-func (i *InspectVMKnic) Execute() (string, error) {
-	mgr, err := utils.NewSSHManager(i.params)
+	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", err
 	}
 	defer mgr.Close()
 
-	if err := mgr.Connect(); err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
-	}
-
 	// Get KNIC details
-	knic := &config.VMKnicInfo{Name: i.params.VMName}
+	knic := &config.VMKnicInfo{Name: params.VMName}
 
 	// Query detailed KNIC info
 	detailCmd := fmt.Sprintf("esxcli network ip interface get -i '%s' 2>/dev/null", knic.Name)
 	detailOutput, err := mgr.RunCommand(detailCmd)
 
 	if err != nil || strings.TrimSpace(detailOutput) == "" {
-		return "", fmt.Errorf("VM kernel NIC '%s' not found", i.params.VMName)
+		return "", fmt.Errorf("VM kernel NIC '%s' not found", params.VMName)
 	}
 
-	i.parseVMKnicFullDetail(knic, detailOutput)
-
-	// Get IPv4 info
-	ipv4Cmd := fmt.Sprintf("esxcli network ip interface ipv4 get -i '%s' 2>/dev/null", knic.Name)
-	ipv4Output, _ := mgr.RunCommand(ipv4Cmd)
-	if ipv4Output != "" {
-		i.parseIPv4FullInfo(knic, ipv4Output)
-	}
-
-	// Format as JSON
-	formatted, err := utils.FormatAsJSON(knic)
-	if err != nil {
-		return "", common.WrapError(err, "failed to format VM kernel NIC info")
-	}
-
-	return formatted, nil
-}
-
-// parseVMKnicFullDetail extracts comprehensive KNIC details
-func (i *InspectVMKnic) parseVMKnicFullDetail(knic *config.VMKnicInfo, output string) {
-	lines := strings.Split(output, "\n")
-
+	// Parse KNIC details
+	lines := strings.Split(detailOutput, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -81,9 +42,7 @@ func (i *InspectVMKnic) parseVMKnicFullDetail(knic *config.VMKnicInfo, output st
 		if strings.Contains(line, "MTU:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				var mtu int
-				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &mtu)
-				knic.MTU = mtu
+				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &knic.MTU)
 			}
 		} else if strings.Contains(line, "MAC Address:") {
 			parts := strings.SplitN(line, ":", 2)
@@ -103,46 +62,46 @@ func (i *InspectVMKnic) parseVMKnicFullDetail(knic *config.VMKnicInfo, output st
 			}
 		}
 	}
-}
 
-// parseIPv4FullInfo extracts full IPv4 address information
-func (i *InspectVMKnic) parseIPv4FullInfo(knic *config.VMKnicInfo, output string) {
-	lines := strings.Split(output, "\n")
+	// Get IPv4 info
+	ipv4Cmd := fmt.Sprintf("esxcli network ip interface ipv4 get -i '%s' 2>/dev/null", knic.Name)
+	ipv4Output, _ := mgr.RunCommand(ipv4Cmd)
+	if ipv4Output != "" {
+		lines := strings.Split(ipv4Output, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if strings.Contains(line, "IPv4 Address:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				knic.IPv4Address = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "IPv4 Netmask:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				knic.IPv4Netmask = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "IPv4 Gateway:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				knic.IPv4Gateway = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "DHCP:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				knic.IPv4DHCP = val == "true" || val == "True" || val == "yes"
+			if strings.Contains(line, "IPv4 Address:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					knic.IPv4Address = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "IPv4 Netmask:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					knic.IPv4Netmask = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "IPv4 Gateway:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					knic.IPv4Gateway = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "DHCP:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					val := strings.TrimSpace(parts[1])
+					knic.IPv4DHCP = val == "true" || val == "True" || val == "yes"
+				}
 			}
 		}
 	}
+
+	return utils.FormatAsJSON(knic)
 }
 
-// Register registers the inspect-vmknic command
 func init() {
-	config.Register("inspect-vmknic", func(params *config.Params) config.CommandInterface {
-		return NewInspectVMKnic(params)
-	})
+	config.RegisterFunc("inspect-networking-vmknics", inspectNetworkingVmknics)
 }

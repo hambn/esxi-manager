@@ -1661,8 +1661,23 @@ func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
 // COMMAND REGISTRATION
 // ============================================================================
 
+// inspectVMs inspects a specific VM with comprehensive details
+func inspectVMs(params *config.Params) (string, error) {
+	if params.VMInspectID == "" && params.VMInspectName == "" {
+		return "", fmt.Errorf("vm-inspect-id or vm-inspect-name parameter is required")
+	}
+
+	mgr, err := utils.NewSSHManager(params)
+	if err != nil {
+		return "", err
+	}
+	defer mgr.Close()
+
+	// Create a temporary InspectVM to use existing methods
+	cmd := NewInspectVM(params)
+	return cmd.Execute()
+}
+
 func init() {
-	config.Register("vm-inspect", func(params *config.Params) config.CommandInterface {
-		return NewInspectVM(params)
-	})
+	config.RegisterFunc("inspect-vms", inspectVMs)
 }
