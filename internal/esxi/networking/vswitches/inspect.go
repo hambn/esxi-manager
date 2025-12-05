@@ -4,91 +4,29 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// VSwitchInspect represents the vswitch inspect command
-type VSwitchInspect struct {
-	params *config.Params
-}
-
-// NewVSwitchInspect creates a new vswitch inspect command instance
-func NewVSwitchInspect(params *config.Params) *VSwitchInspect {
-	return &VSwitchInspect{params: params}
-}
-
-// Validate checks that required parameters are present
-func (v *VSwitchInspect) Validate() error {
-	return nil
-}
-
-// Execute gathers and outputs comprehensive vswitch information as JSON
-func (v *VSwitchInspect) Execute() (string, error) {
-	if v.params.VSwitchName == "" {
-		return "", fmt.Errorf("--vswitch-name parameter is required for vswitch-inspect")
+// inspectNetworkingVswitches inspects a specific vswitch with detailed information
+func inspectNetworkingVswitches(params *config.Params) (string, error) {
+	if params.VSwitchName == "" {
+		return "", fmt.Errorf("--vswitch-name parameter is required for inspect-networking-vswitches")
 	}
 
-	mgr, err := utils.NewSSHManager(v.params)
-	if err != nil {
-		return "", common.NewConnectionError(v.params.ESXiHostURI, "failed to create SSH manager", err)
-	}
-	defer mgr.Close()
-
-	if err := mgr.Connect(); err != nil {
-		return "", common.NewConnectionError(v.params.ESXiHostURI, "failed to connect", err)
-	}
-
-	// Get all vswitches
-	vswitches, err := v.gatherVSwitches(mgr)
+	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
 		return "", err
 	}
+	defer mgr.Close()
 
-	// Find the requested vswitch
-	var targetVSwitch config.VSwitchInfo
-	found := false
-	for _, vs := range vswitches {
-		if vs.Name == v.params.VSwitchName {
-			targetVSwitch = vs
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return "", fmt.Errorf("vswitch '%s' not found", v.params.VSwitchName)
-	}
-
-	// Enrich single vswitch with policies
-	enrichedVSwitch, err := v.enrichVSwitchWithPolicies(mgr, targetVSwitch)
-	if err != nil {
-		common.Debug("enrich vswitch", "error", err.Error())
-		// Don't fail if enrichment fails
-	}
-
-	// Format as JSON
-	formatted, err := utils.FormatAsJSON(enrichedVSwitch)
-	if err != nil {
-		return "", common.WrapError(err, "failed to format vswitch info")
-	}
-
-	return formatted, nil
-}
-
-// gatherVSwitches gathers vswitch information
-func (v *VSwitchInspect) gatherVSwitches(mgr *utils.SSHManager) ([]config.VSwitchInfo, error) {
+	// Get all vswitches
 	output, err := mgr.RunCommand("esxcli network vswitch standard list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
-		return nil, fmt.Errorf("failed to query vswitches: %w", err)
+		return "", fmt.Errorf("failed to query vswitches: %w", err)
 	}
 
-	return v.parseVSwitchListing(output), nil
-}
-
-// parseVSwitchListing parses esxcli vswitch output
-func (v *VSwitchInspect) parseVSwitchListing(output string) []config.VSwitchInfo {
+	// Parse vswitch listing
 	var vswitches []config.VSwitchInfo
 	var currentVSwitch config.VSwitchInfo
 	var inVSwitch bool
@@ -162,123 +100,111 @@ func (v *VSwitchInspect) parseVSwitchListing(output string) []config.VSwitchInfo
 		vswitches = append(vswitches, currentVSwitch)
 	}
 
-	return vswitches
-}
-
-// enrichVSwitchWithPolicies queries security, teaming, and shaping policies for a single vswitch
-func (v *VSwitchInspect) enrichVSwitchWithPolicies(mgr *utils.SSHManager, vs config.VSwitchInfo) (config.VSwitchInfo, error) {
-	if vs.Name == "" {
-		return vs, nil
-	}
-
-	// Query security policy
-	securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", vs.Name)
-	secOutput, _ := mgr.RunCommand(securityCmd)
-	if secOutput != "" {
-		vs.Security = v.parseSecurityPolicy(secOutput)
-	}
-
-	// Query NIC teaming policy
-	teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", vs.Name)
-	teamOutput, _ := mgr.RunCommand(teamingCmd)
-	if teamOutput != "" {
-		vs.NICTeaming = v.parseTeamingPolicy(teamOutput)
-	}
-
-	// Query shaping policy
-	shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", vs.Name)
-	shapOutput, _ := mgr.RunCommand(shapingCmd)
-	if shapOutput != "" {
-		vs.Shaping = v.parseShapingPolicy(shapOutput)
-	}
-
-	return vs, nil
-}
-
-// parseSecurityPolicy extracts security policy from esxcli output
-func (v *VSwitchInspect) parseSecurityPolicy(output string) *config.SecurityPolicy {
-	policy := &config.SecurityPolicy{}
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Promiscuous") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.AllowPromiscuous = val == "Yes" || val == "true" || val == "1"
-			}
-		} else if strings.Contains(line, "Forged") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.AllowForgedTx = val == "Yes" || val == "true" || val == "1"
-			}
-		} else if strings.Contains(line, "MAC") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.AllowMACChanges = val == "Yes" || val == "true" || val == "1"
-			}
+	// Find the requested vswitch
+	var targetVSwitch config.VSwitchInfo
+	found := false
+	for _, vs := range vswitches {
+		if vs.Name == params.VSwitchName {
+			targetVSwitch = vs
+			found = true
+			break
 		}
 	}
 
-	return policy
-}
+	if !found {
+		return "", fmt.Errorf("vswitch '%s' not found", params.VSwitchName)
+	}
 
-// parseTeamingPolicy extracts teaming policy from esxcli output
-func (v *VSwitchInspect) parseTeamingPolicy(output string) *config.NICTeamingPolicy {
-	policy := &config.NICTeamingPolicy{}
-	lines := strings.Split(output, "\n")
+	// Enrich with policies
+	if targetVSwitch.Name != "" {
+		// Query security policy
+		securityCmd := fmt.Sprintf("esxcli network vswitch standard policy security get -v '%s' 2>/dev/null", targetVSwitch.Name)
+		secOutput, _ := mgr.RunCommand(securityCmd)
+		if secOutput != "" {
+			policy := &config.SecurityPolicy{}
+			lines := strings.Split(secOutput, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, "Promiscuous") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.AllowPromiscuous = val == "Yes" || val == "true" || val == "1"
+					}
+				} else if strings.Contains(line, "Forged") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.AllowForgedTx = val == "Yes" || val == "true" || val == "1"
+					}
+				} else if strings.Contains(line, "MAC") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.AllowMACChanges = val == "Yes" || val == "true" || val == "1"
+					}
+				}
+			}
+			targetVSwitch.Security = policy
+		}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Notify") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.NotifySwitches = val == "Yes" || val == "true" || val == "1"
+		// Query NIC teaming policy
+		teamingCmd := fmt.Sprintf("esxcli network vswitch standard policy failover get -v '%s' 2>/dev/null", targetVSwitch.Name)
+		teamOutput, _ := mgr.RunCommand(teamingCmd)
+		if teamOutput != "" {
+			policy := &config.NICTeamingPolicy{}
+			lines := strings.Split(teamOutput, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, "Notify") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.NotifySwitches = val == "Yes" || val == "true" || val == "1"
+					}
+				} else if strings.Contains(line, "Policy") && strings.Contains(line, ":") && !strings.Contains(line, "Reverse") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						policy.Policy = strings.TrimSpace(parts[1])
+					}
+				} else if strings.Contains(line, "Reverse") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.ReversePolicy = val == "Yes" || val == "true" || val == "1"
+					}
+				} else if strings.Contains(line, "Failback") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.Failback = val == "Yes" || val == "true" || val == "1"
+					}
+				}
 			}
-		} else if strings.Contains(line, "Policy") && strings.Contains(line, ":") && !strings.Contains(line, "Reverse") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				policy.Policy = strings.TrimSpace(parts[1])
+			targetVSwitch.NICTeaming = policy
+		}
+
+		// Query shaping policy
+		shapingCmd := fmt.Sprintf("esxcli network vswitch standard policy shaping get -v '%s' 2>/dev/null", targetVSwitch.Name)
+		shapOutput, _ := mgr.RunCommand(shapingCmd)
+		if shapOutput != "" {
+			policy := &config.ShapingPolicy{}
+			lines := strings.Split(shapOutput, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, "Enabled") && strings.Contains(line, ":") {
+					parts := strings.SplitN(line, ":", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						policy.Enabled = val == "Yes" || val == "true" || val == "1"
+					}
+				}
 			}
-		} else if strings.Contains(line, "Reverse") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.ReversePolicy = val == "Yes" || val == "true" || val == "1"
-			}
-		} else if strings.Contains(line, "Failback") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.Failback = val == "Yes" || val == "true" || val == "1"
-			}
+			targetVSwitch.Shaping = policy
 		}
 	}
 
-	return policy
-}
-
-// parseShapingPolicy extracts shaping policy from esxcli output
-func (v *VSwitchInspect) parseShapingPolicy(output string) *config.ShapingPolicy {
-	policy := &config.ShapingPolicy{}
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Enabled") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				policy.Enabled = val == "Yes" || val == "true" || val == "1"
-			}
-		}
-	}
-
-	return policy
+	return utils.FormatAsJSON(targetVSwitch)
 }
 
 // parsePortsField parses "Ports: 1536 (1529 available)" format
@@ -331,9 +257,6 @@ func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
 	}
 }
 
-// Register registers the vswitch-inspect command
 func init() {
-	config.Register("vswitch-inspect", func(params *config.Params) config.CommandInterface {
-		return NewVSwitchInspect(params)
-	})
+	config.RegisterFunc("inspect-networking-vswitches", inspectNetworkingVswitches)
 }

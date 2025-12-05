@@ -98,11 +98,6 @@ func Execute(commandName string, params *esxi.Params) error {
 		return esxi.WrapError(err, "failed to dispatch command")
 	}
 
-	// Validate command-specific parameters
-	if err := cmd.Validate(); err != nil {
-		return esxi.WrapError(err, "command validation failed")
-	}
-
 	// Execute the command and get the JSON output
 	jsonOutput, err := cmd.Execute()
 	if err != nil {

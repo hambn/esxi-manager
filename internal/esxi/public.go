@@ -22,6 +22,10 @@ type CommandInterface = config.CommandInterface
 // Re-exported from config package for cleaner imports
 type CommandFactory = config.CommandFactory
 
+// SimpleCommand is a simple command function that takes params and returns (string, error)
+// Re-exported from config package for cleaner imports
+type SimpleCommand = config.SimpleCommand
+
 // CommandRegistry manages command registration and execution
 // Re-exported from config package for cleaner imports
 type CommandRegistry = config.CommandRegistry
@@ -29,6 +33,11 @@ type CommandRegistry = config.CommandRegistry
 // Register registers a command factory with a name
 // Re-exported from config package for cleaner imports
 var Register = config.Register
+
+// RegisterFunc registers a simple function as a command with auto-generated name
+// Re-exported from config package for cleaner imports
+// Command name is automatically derived from the file path
+var RegisterFunc = config.RegisterFunc
 
 // Error logs an error message with structured fields
 // Re-exported from common package for cleaner imports

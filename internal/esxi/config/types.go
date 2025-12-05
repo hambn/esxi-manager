@@ -49,11 +49,10 @@ type Params struct {
 }
 
 // CommandInterface defines the contract that all commands must implement
-// Each command must be able to validate its specific parameters and execute its operation
+// Commands validate parameters and execute in one step via Execute()
 // Execute returns the output as a string (always in JSON format from esxi layer)
 // The CLI interface layer then decides whether to output raw JSON or format it for readability
 type CommandInterface interface {
-	Validate() error
 	Execute() (string, error)
 }
 

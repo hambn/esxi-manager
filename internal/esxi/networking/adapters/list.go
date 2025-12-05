@@ -19,18 +19,11 @@ type NetworkAdapterListInfo struct {
 	MACAddress  string
 }
 
-type command struct {
-	params *config.Params
-}
-
-func (c *command) Validate() error {
-	return nil
-}
-
-func (c *command) Execute() (string, error) {
-	manager, err := utils.NewSSHManager(c.params)
+// listNetworkAdapters is the ONE function that does everything
+func listNetworkAdapters(params *config.Params) (string, error) {
+	manager, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", err
 	}
 	defer manager.Close()
 
@@ -69,7 +62,5 @@ func (c *command) Execute() (string, error) {
 }
 
 func init() {
-	config.Register("list-network-adapters", func(params *config.Params) config.CommandInterface {
-		return &command{params: params}
-	})
+	config.RegisterFunc("list-networking-adapters", listNetworkAdapters)
 }

@@ -48,7 +48,11 @@ type SSHManager struct {
 }
 
 // NewSSHManager creates a new SSH connection manager for an ESXi host
+// Validates connection parameters and returns any validation errors
 func NewSSHManager(params *config.Params) (*SSHManager, error) {
+	if err := ValidateConnectionParams(params); err != nil {
+		return nil, err
+	}
 	return &SSHManager{
 		params:      params,
 		maxAttempts: 3,

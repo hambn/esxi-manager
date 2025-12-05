@@ -15,18 +15,11 @@ type PortGroupInfo struct {
 	VLANID        string
 }
 
-type ListPortGroupsCommand struct {
-	params *config.Params
-}
-
-func (c *ListPortGroupsCommand) Validate() error {
-	return nil
-}
-
-func (c *ListPortGroupsCommand) Execute() (string, error) {
-	manager, err := utils.NewSSHManager(c.params)
+// listNetworkingPortgroups is the ONE function that does everything
+func listNetworkingPortgroups(params *config.Params) (string, error) {
+	manager, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", err
 	}
 	defer manager.Close()
 
@@ -35,11 +28,6 @@ func (c *ListPortGroupsCommand) Execute() (string, error) {
 		return "", fmt.Errorf("failed to list port groups: %w", err)
 	}
 
-	portgroups := c.parsePortGroups(output)
-	return c.formatPortGroups(portgroups)
-}
-
-func (c *ListPortGroupsCommand) parsePortGroups(output string) []PortGroupInfo {
 	var portgroups []PortGroupInfo
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
@@ -56,34 +44,22 @@ func (c *ListPortGroupsCommand) parsePortGroups(output string) []PortGroupInfo {
 
 		// Last 3 fields are: VLANID, ActiveClients, VSwitch (in reverse order from the end)
 		// Everything before that is the port group name (may have spaces)
-		// Use shared parser to extract multi-word name
 		vlanID := fields[len(fields)-1]
 		activeClients := fields[len(fields)-2]
 		vswitch := fields[len(fields)-3]
 		name := utils.ParseMultiWordName(fields, 3)
 
-		pg := PortGroupInfo{
+		portgroups = append(portgroups, PortGroupInfo{
 			Name:          name,
 			VSwitch:       vswitch,
 			ActiveClients: activeClients,
 			VLANID:        vlanID,
-		}
-		portgroups = append(portgroups, pg)
+		})
 	}
 
-	return portgroups
-}
-
-func (c *ListPortGroupsCommand) formatPortGroups(portgroups []PortGroupInfo) (string, error) {
-	if len(portgroups) == 0 {
-		// Return empty JSON array
-		return utils.FormatAsJSON([]PortGroupInfo{})
-	}
 	return utils.FormatAsJSON(portgroups)
 }
 
 func init() {
-	config.Register("list-portgroups", func(params *config.Params) config.CommandInterface {
-		return &ListPortGroupsCommand{params: params}
-	})
+	config.RegisterFunc("list-networking-portgroups", listNetworkingPortgroups)
 }
