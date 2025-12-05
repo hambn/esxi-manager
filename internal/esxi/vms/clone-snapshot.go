@@ -211,7 +211,33 @@ func cloneVMFromSnapshot(params *config.Params) (string, error) {
 		diskTypeArg = params.DestDiskType
 	}
 
+	// Query source snapshot size first to determine if resize is needed
+	queryCmd := fmt.Sprintf("grep '^RW' '%s' | awk '{print $2}'", srcVmdkFullPath)
+	sectorOutput, _ := manager.RunCommand(queryCmd)
+	sectorOutput = strings.TrimSpace(sectorOutput)
+
+	sourceSizeGB := int64(0)
+	if sectorOutput != "" {
+		if sectors, err := strconv.ParseInt(sectorOutput, 10, 64); err == nil {
+			sourceSizeGB = (sectors * 512) / 1073741824
+		}
+	}
+
+	// Determine final disk size
+	finalSizeGB := sourceSizeGB
+	if params.DestDiskSize > 0 {
+		if int64(params.DestDiskSize) < sourceSizeGB {
+			// Cannot shrink - inform user but use source size
+			addStep(response, 7, "Cloning snapshot disk", "success",
+				fmt.Sprintf("Disk Type: %s (cannot shrink from %dGB to %dGB, using %dGB)", diskTypeArg, sourceSizeGB, params.DestDiskSize, sourceSizeGB))
+		} else {
+			// Use requested size (same or larger than source)
+			finalSizeGB = int64(params.DestDiskSize)
+		}
+	}
+
 	// Clone the snapshot VMDK (flattens the chain)
+	// vmkfstools -i creates destination automatically, so we clone to source size first
 	cloneCmd := fmt.Sprintf("vmkfstools -i '%s' '%s' -d %s", srcVmdkFullPath, destVmdkFullPath, diskTypeArg)
 	_, err = manager.RunCommand(cloneCmd)
 	if err != nil {
@@ -223,36 +249,28 @@ func cloneVMFromSnapshot(params *config.Params) (string, error) {
 		return formatCloneResponse(response)
 	}
 
-	// Step 7b: Resize disk if custom size is specified (only expand, not shrink)
-	resizeDetail := fmt.Sprintf("Disk Type: %s", diskTypeArg)
-	if params.DestDiskSize > 0 {
-		// Query current VMDK size (RW line is typically around line 12 after extent description)
-		queryCmd := fmt.Sprintf("grep '^RW' '%s' | awk '{print $2}'", destVmdkFullPath)
-		sectorOutput, _ := manager.RunCommand(queryCmd)
-		sectorOutput = strings.TrimSpace(sectorOutput)
+	// Now handle resizing if a different size was requested
+	if finalSizeGB > sourceSizeGB {
+		// Expand disk to requested size
+		resizeCmd := fmt.Sprintf("vmkfstools -X %dG '%s' 2>&1", finalSizeGB, destVmdkFullPath)
+		resizeOutput, resizeErr := manager.RunCommand(resizeCmd)
 
-		if sectorOutput != "" {
-			if sectors, err := strconv.ParseInt(sectorOutput, 10, 64); err == nil {
-				currentSizeGB := (sectors * 512) / 1073741824
-				if params.DestDiskSize > int(currentSizeGB) {
-					// Can expand
-					resizeCmd := fmt.Sprintf("vmkfstools -X %dG '%s' 2>&1", params.DestDiskSize, destVmdkFullPath)
-					resizeOutput, resizeErr := manager.RunCommand(resizeCmd)
-
-					if resizeErr == nil || strings.Contains(resizeOutput, "100% done") || strings.Contains(resizeOutput, "Grow: 100%") {
-						resizeDetail = fmt.Sprintf("Disk Type: %s, Resized to %dGB", diskTypeArg, params.DestDiskSize)
-					} else {
-						resizeDetail = fmt.Sprintf("Disk Type: %s (resize to %dGB failed, using %dGB)", diskTypeArg, params.DestDiskSize, currentSizeGB)
-					}
-				} else if params.DestDiskSize < int(currentSizeGB) {
-					resizeDetail = fmt.Sprintf("Disk Type: %s (cannot shrink from %dGB to %dGB, using %dGB)", diskTypeArg, currentSizeGB, params.DestDiskSize, currentSizeGB)
-				} else {
-					resizeDetail = fmt.Sprintf("Disk Type: %s, Size: %dGB", diskTypeArg, currentSizeGB)
-				}
-			}
+		if resizeErr == nil || strings.Contains(resizeOutput, "100% done") || strings.Contains(resizeOutput, "Grow: 100%") {
+			addStep(response, 7, "Cloning snapshot disk", "success",
+				fmt.Sprintf("Disk Type: %s, Expanded to %dGB", diskTypeArg, finalSizeGB))
+		} else {
+			addStep(response, 7, "Cloning snapshot disk", "success",
+				fmt.Sprintf("Disk Type: %s (expansion to %dGB failed, using %dGB)", diskTypeArg, finalSizeGB, sourceSizeGB))
 		}
+	} else if finalSizeGB == sourceSizeGB {
+		// No resizing needed
+		addStep(response, 7, "Cloning snapshot disk", "success",
+			fmt.Sprintf("Disk Type: %s, Size: %dGB", diskTypeArg, sourceSizeGB))
+	} else {
+		// finalSizeGB < sourceSizeGB - cannot shrink
+		addStep(response, 7, "Cloning snapshot disk", "success",
+			fmt.Sprintf("Disk Type: %s (cannot shrink from %dGB to %dGB, using %dGB)", diskTypeArg, sourceSizeGB, finalSizeGB, sourceSizeGB))
 	}
-	addStep(response, 7, "Cloning snapshot disk", "success", resizeDetail)
 
 	// Step 8: Copy and modify VMX file
 	addStep(response, 8, "Creating VM configuration", "in_progress", "")
