@@ -25,6 +25,14 @@ type Params struct {
 	DestCPU       int
 	DestNetwork   string
 
+	// VM Snapshot Cloning Parameters
+	// Used by clone-vm-from-snapshot command
+	SnapshotName      string
+	SnapshotID        string
+	DestDiskType      string // thin, zeroedthick, eagerzeroedthick
+	DestDiskSize      int    // Size in GB
+	DestNetworkList   string // Comma-separated portgroup names
+
 	// VM Inspect Parameters
 	// Used by vm-inspect command to show all details about a specific VM
 	VMInspectID   string
@@ -85,6 +93,13 @@ func (p *Params) RegisterFlags() {
 	flag.IntVar(&p.DestRAM, "dest-vm-ram", 0, "Destination VM RAM in MB")
 	flag.IntVar(&p.DestCPU, "dest-vm-cpu", 0, "Destination VM CPU count")
 	flag.StringVar(&p.DestNetwork, "dest-vm-network", "", "Destination VM network/portgroup")
+
+	// VM Snapshot Cloning Flags
+	flag.StringVar(&p.SnapshotName, "snapshot-name", "", "Snapshot name for cloning")
+	flag.StringVar(&p.SnapshotID, "snapshot-id", "", "Snapshot ID for cloning")
+	flag.StringVar(&p.DestDiskType, "dest-disk-type", "thin", "Disk provisioning type (thin, zeroedthick, eagerzeroedthick)")
+	flag.IntVar(&p.DestDiskSize, "dest-disk-size", 0, "Destination disk size in GB (0 = use snapshot size)")
+	flag.StringVar(&p.DestNetworkList, "dest-network-list", "", "Comma-separated portgroup names (default: use source VM portgroups)")
 
 	// VM Inspect Flags
 	flag.StringVar(&p.VMInspectID, "vm-inspect-id", "", "VM ID to inspect")
