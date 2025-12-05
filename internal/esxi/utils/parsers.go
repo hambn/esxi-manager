@@ -8,9 +8,10 @@ import (
 // Splits the line by whitespace, then reconstructs the name from the fields before the fixed-width columns.
 //
 // Example:
-//   fields := strings.Fields("Management Network vSwitch0 1 0")
-//   name := ParseMultiWordName(fields, 3)  // "Management Network"
-//   // Last 3 fields are: vSwitch0 (vswitch), 1 (activeClients), 0 (vlanID)
+//
+//	fields := strings.Fields("Management Network vSwitch0 1 0")
+//	name := ParseMultiWordName(fields, 3)  // "Management Network"
+//	// Last 3 fields are: vSwitch0 (vswitch), 1 (activeClients), 0 (vlanID)
 func ParseMultiWordName(fields []string, fixedFieldCount int) string {
 	if len(fields) <= fixedFieldCount {
 		if len(fields) > 0 {
@@ -23,33 +24,35 @@ func ParseMultiWordName(fields []string, fixedFieldCount int) string {
 
 // ParseMultiLineKeyValue parses output with multi-line format where indentation indicates hierarchy.
 // Common pattern in esxcli output:
-//   Name1
-//     Key1: Value1
-//     Key2: Value2
-//   Name2
-//     Key1: Value1
+//
+//	Name1
+//	  Key1: Value1
+//	  Key2: Value2
+//	Name2
+//	  Key1: Value1
 //
 // The parser calls recordFunc whenever a new unindented line is found (new record),
 // and parses indented lines as key-value pairs, calling parseFunc for each pair.
 //
 // Example:
-//   lines := []string{
-//     "vSwitch0",
-//     "  Num Ports: 1536",
-//     "  MTU: 1500",
-//     "vSwitch1",
-//     "  Num Ports: 128",
-//   }
-//   var switches []Switch
-//   currentSwitch := &Switch{}
-//   ParseMultiLineKeyValue(lines,
-//     func() { switches = append(switches, *currentSwitch) },
-//     func(key, val string) {
-//       if key == "Num Ports" {
-//         currentSwitch.NumPorts = val
-//       }
-//     },
-//   )
+//
+//	lines := []string{
+//	  "vSwitch0",
+//	  "  Num Ports: 1536",
+//	  "  MTU: 1500",
+//	  "vSwitch1",
+//	  "  Num Ports: 128",
+//	}
+//	var switches []Switch
+//	currentSwitch := &Switch{}
+//	ParseMultiLineKeyValue(lines,
+//	  func() { switches = append(switches, *currentSwitch) },
+//	  func(key, val string) {
+//	    if key == "Num Ports" {
+//	      currentSwitch.NumPorts = val
+//	    }
+//	  },
+//	)
 func ParseMultiLineKeyValue(
 	lines []string,
 	recordFunc func(),
@@ -87,8 +90,9 @@ func ParseMultiLineKeyValue(
 // Returns the key and value, trimmed of whitespace.
 //
 // Example:
-//   key, val, ok := ParseKeyValueLine("MTU: 1500")
-//   // key: "MTU", val: "1500", ok: true
+//
+//	key, val, ok := ParseKeyValueLine("MTU: 1500")
+//	// key: "MTU", val: "1500", ok: true
 func ParseKeyValueLine(line string) (key, value string, ok bool) {
 	if !strings.Contains(line, ":") {
 		return "", "", false
@@ -112,9 +116,10 @@ func IsLineIndented(line string) bool {
 // Returns slice of lines starting from the first data line.
 //
 // Example:
-//   lines := []string{"Name", "----", "VM1", "VM2"}
-//   dataLines := SkipHeaderLines(lines, 2)
-//   // dataLines: ["VM1", "VM2"]
+//
+//	lines := []string{"Name", "----", "VM1", "VM2"}
+//	dataLines := SkipHeaderLines(lines, 2)
+//	// dataLines: ["VM1", "VM2"]
 func SkipHeaderLines(lines []string, headerLineCount int) []string {
 	if headerLineCount >= len(lines) {
 		return []string{}

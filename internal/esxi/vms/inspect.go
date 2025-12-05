@@ -29,15 +29,15 @@ func (i *InspectVM) Validate() error {
 }
 
 // Execute gathers and outputs comprehensive VM information as JSON
-func (i *InspectVM) Execute() error {
+func (i *InspectVM) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(i.params)
 	if err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Resolve VM ID if only name is provided
@@ -45,7 +45,7 @@ func (i *InspectVM) Execute() error {
 	if vmID == "" {
 		id, err := i.resolveVMIDFromName(mgr, i.params.VMInspectName)
 		if err != nil {
-			return err
+			return "", err
 		}
 		vmID = id
 	}
@@ -53,7 +53,7 @@ func (i *InspectVM) Execute() error {
 	// Gather all VM information
 	info, err := i.gatherVMInfo(mgr, vmID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Ensure all fields are properly initialized for JSON output
@@ -82,11 +82,10 @@ func (i *InspectVM) Execute() error {
 	// Output as JSON with all fields
 	jsonData, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
-		return common.WrapError(err, "failed to marshal JSON")
+		return "", common.WrapError(err, "failed to marshal JSON")
 	}
 
-	fmt.Println(string(jsonData))
-	return nil
+	return string(jsonData), nil
 }
 
 // resolveVMIDFromName finds VM ID by name
@@ -120,10 +119,10 @@ type InspectVMInfo struct {
 	Name string `json:"name"`
 
 	// Power and connection state
-	PowerState       string `json:"power_state,omitempty"`
-	ConnectionState  string `json:"connection_state,omitempty"`
-	BootTime         string `json:"boot_time,omitempty"`
-	FaultTolerance   string `json:"fault_tolerance_state,omitempty"`
+	PowerState      string `json:"power_state,omitempty"`
+	ConnectionState string `json:"connection_state,omitempty"`
+	BootTime        string `json:"boot_time,omitempty"`
+	FaultTolerance  string `json:"fault_tolerance_state,omitempty"`
 
 	// UUIDs and identifiers
 	UUID         string `json:"uuid,omitempty"`
@@ -131,11 +130,11 @@ type InspectVMInfo struct {
 	BiosUUID     string `json:"bios_uuid,omitempty"`
 
 	// Configuration
-	ConfigPath  string `json:"config_path,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Firmware    string `json:"firmware,omitempty"`
-	GuestOS     string `json:"guest_os,omitempty"`
-	GuestID     string `json:"guest_id,omitempty"`
+	ConfigPath string `json:"config_path,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Firmware   string `json:"firmware,omitempty"`
+	GuestOS    string `json:"guest_os,omitempty"`
+	GuestID    string `json:"guest_id,omitempty"`
 
 	// VM metadata
 	Annotation string `json:"annotation,omitempty"`
@@ -151,15 +150,15 @@ type InspectVMInfo struct {
 	Hardware config.HardwareInfo `json:"hardware"`
 
 	// Usage metrics
-	MaxCpuUsage   int `json:"max_cpu_usage,omitempty"`
+	MaxCpuUsage    int `json:"max_cpu_usage,omitempty"`
 	MaxMemoryUsage int `json:"max_memory_usage,omitempty"`
 
 	// Infrastructure
-	Networks    []NetworkInfo   `json:"networks"`
-	VSwitches   []VSwitchInfo   `json:"vswitches,omitempty"`
-	Disks       []DiskInfo      `json:"disks"`
-	Datastores  []DatastoreInfo `json:"datastores"`
-	Snapshots   []SnapshotInfo  `json:"snapshots,omitempty"`
+	Networks   []NetworkInfo   `json:"networks"`
+	VSwitches  []VSwitchInfo   `json:"vswitches,omitempty"`
+	Disks      []DiskInfo      `json:"disks"`
+	Datastores []DatastoreInfo `json:"datastores"`
+	Snapshots  []SnapshotInfo  `json:"snapshots,omitempty"`
 
 	// Raw configuration files
 	VMXConfig   map[string]string `json:"vmx_config,omitempty"`
@@ -177,23 +176,22 @@ type InspectVMInfo struct {
 	VMXPath      string `json:"-"`
 }
 
-
 // NetworkInfo holds NIC information with detailed vswitch/portgroup details
 type NetworkInfo struct {
-	Index          int                      `json:"index"`
-	Name           string                   `json:"name"`
-	MacAddress     string                   `json:"mac_address"`
-	Network        string                   `json:"network"`
-	Connected      bool                     `json:"connected"`
-	VSwitch        string                   `json:"vswitch,omitempty"`
-	VLANID         int                      `json:"vlan_id,omitempty"`
-	ActiveClients  int                      `json:"active_clients,omitempty"`
-	Accessible     bool                     `json:"accessible,omitempty"`
-	VMCount        int                      `json:"vm_count,omitempty"`
-	ActivePorts    int                      `json:"active_ports,omitempty"`
-	Security       *config.SecurityPolicy   `json:"security_policy,omitempty"`
-	NICTeaming     *config.NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
-	Shaping        *config.ShapingPolicy    `json:"shaping_policy,omitempty"`
+	Index         int                      `json:"index"`
+	Name          string                   `json:"name"`
+	MacAddress    string                   `json:"mac_address"`
+	Network       string                   `json:"network"`
+	Connected     bool                     `json:"connected"`
+	VSwitch       string                   `json:"vswitch,omitempty"`
+	VLANID        int                      `json:"vlan_id,omitempty"`
+	ActiveClients int                      `json:"active_clients,omitempty"`
+	Accessible    bool                     `json:"accessible,omitempty"`
+	VMCount       int                      `json:"vm_count,omitempty"`
+	ActivePorts   int                      `json:"active_ports,omitempty"`
+	Security      *config.SecurityPolicy   `json:"security_policy,omitempty"`
+	NICTeaming    *config.NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
+	Shaping       *config.ShapingPolicy    `json:"shaping_policy,omitempty"`
 }
 
 // DiskInfo holds disk information
@@ -211,41 +209,41 @@ type DiskInfo struct {
 
 // DatastoreInfo holds datastore information with comprehensive VMFS/NFS metadata
 type DatastoreInfo struct {
-	Name            string  `json:"name"`
-	Path            string  `json:"path"`
-	Type            string  `json:"type"`
-	Capacity        int64   `json:"capacity_bytes"`
-	CapacityGB      string  `json:"capacity_gb"`
-	FreeSpace       int64   `json:"free_space_bytes"`
-	FreeGB          string  `json:"free_space_gb"`
-	UsedSpace       int64   `json:"used_space_bytes"`
-	UsedGB          string  `json:"used_space_gb"`
-	UsagePercent    float64 `json:"usage_percent"`
-	UUID            string  `json:"uuid,omitempty"`
-	MountPoint      string  `json:"mount_point,omitempty"`
-	Version         string  `json:"version,omitempty"`
-	Local           bool    `json:"local,omitempty"`
-	BlockSize       string  `json:"block_size,omitempty"`
-	HostCount       int     `json:"host_count,omitempty"`
-	VMCount         int     `json:"vm_count,omitempty"`
-	Mounted         bool    `json:"mounted,omitempty"`
-	Accessible      bool    `json:"accessible,omitempty"`
-	Extents         []string `json:"extents,omitempty"`
-	URL             string  `json:"url,omitempty"`
+	Name         string   `json:"name"`
+	Path         string   `json:"path"`
+	Type         string   `json:"type"`
+	Capacity     int64    `json:"capacity_bytes"`
+	CapacityGB   string   `json:"capacity_gb"`
+	FreeSpace    int64    `json:"free_space_bytes"`
+	FreeGB       string   `json:"free_space_gb"`
+	UsedSpace    int64    `json:"used_space_bytes"`
+	UsedGB       string   `json:"used_space_gb"`
+	UsagePercent float64  `json:"usage_percent"`
+	UUID         string   `json:"uuid,omitempty"`
+	MountPoint   string   `json:"mount_point,omitempty"`
+	Version      string   `json:"version,omitempty"`
+	Local        bool     `json:"local,omitempty"`
+	BlockSize    string   `json:"block_size,omitempty"`
+	HostCount    int      `json:"host_count,omitempty"`
+	VMCount      int      `json:"vm_count,omitempty"`
+	Mounted      bool     `json:"mounted,omitempty"`
+	Accessible   bool     `json:"accessible,omitempty"`
+	Extents      []string `json:"extents,omitempty"`
+	URL          string   `json:"url,omitempty"`
 }
 
 // VSwitchInfo holds virtual switch information
 type VSwitchInfo struct {
-	Name           string            `json:"name"`
-	Type           string            `json:"type,omitempty"`
-	PortGroupCount int               `json:"port_group_count,omitempty"`
-	Uplinks        []string          `json:"uplinks,omitempty"`
-	MTU            int               `json:"mtu,omitempty"`
-	Ports          int               `json:"ports,omitempty"`
-	AvailablePorts int               `json:"available_ports,omitempty"`
-	LinkDiscovery  string            `json:"link_discovery,omitempty"`
-	AttachedVMs    int               `json:"attached_vms,omitempty"`
-	ActiveVMs      int               `json:"active_vms,omitempty"`
+	Name           string                   `json:"name"`
+	Type           string                   `json:"type,omitempty"`
+	PortGroupCount int                      `json:"port_group_count,omitempty"`
+	Uplinks        []string                 `json:"uplinks,omitempty"`
+	MTU            int                      `json:"mtu,omitempty"`
+	Ports          int                      `json:"ports,omitempty"`
+	AvailablePorts int                      `json:"available_ports,omitempty"`
+	LinkDiscovery  string                   `json:"link_discovery,omitempty"`
+	AttachedVMs    int                      `json:"attached_vms,omitempty"`
+	ActiveVMs      int                      `json:"active_vms,omitempty"`
 	Security       *config.SecurityPolicy   `json:"security_policy,omitempty"`
 	NICTeaming     *config.NICTeamingPolicy `json:"nic_teaming_policy,omitempty"`
 	Shaping        *config.ShapingPolicy    `json:"shaping_policy,omitempty"`
@@ -268,21 +266,21 @@ type SnapshotInfo struct {
 
 // VMDKInfo holds VMDK descriptor file information
 type VMDKInfo struct {
-	Filename      string            `json:"filename"`
-	Version       string            `json:"version"`
-	Encoding      string            `json:"encoding"`
-	CID           string            `json:"cid"`
-	ParentCID     string            `json:"parent_cid"`
-	CreateType    string            `json:"create_type"`
-	Extents       []ExtentInfo      `json:"extents"`
-	DDBParameters map[string]string `json:"ddb_parameters"`
-	Capacity      int64             `json:"capacity_sectors"`
-	AdapterType   string            `json:"adapter_type"`
-	Geometry      GeometryInfo      `json:"geometry"`
-	ThinProvisioned bool            `json:"thin_provisioned"`
-	UUID          string            `json:"uuid"`
-	VirtualHWVer  string            `json:"virtual_hw_version"`
-	LongContentID string            `json:"long_content_id"`
+	Filename        string            `json:"filename"`
+	Version         string            `json:"version"`
+	Encoding        string            `json:"encoding"`
+	CID             string            `json:"cid"`
+	ParentCID       string            `json:"parent_cid"`
+	CreateType      string            `json:"create_type"`
+	Extents         []ExtentInfo      `json:"extents"`
+	DDBParameters   map[string]string `json:"ddb_parameters"`
+	Capacity        int64             `json:"capacity_sectors"`
+	AdapterType     string            `json:"adapter_type"`
+	Geometry        GeometryInfo      `json:"geometry"`
+	ThinProvisioned bool              `json:"thin_provisioned"`
+	UUID            string            `json:"uuid"`
+	VirtualHWVer    string            `json:"virtual_hw_version"`
+	LongContentID   string            `json:"long_content_id"`
 }
 
 // ExtentInfo holds extent description information

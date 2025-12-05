@@ -15,20 +15,19 @@ func (c *GetVersionCommand) Validate() error {
 	return nil
 }
 
-func (c *GetVersionCommand) Execute() error {
+func (c *GetVersionCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("vmware -v")
 	if err != nil {
-		return fmt.Errorf("failed to get version: %w", err)
+		return "", fmt.Errorf("failed to get version: %w", err)
 	}
 
-	fmt.Print(output)
-	return nil
+	return output, nil
 }
 
 func init() {

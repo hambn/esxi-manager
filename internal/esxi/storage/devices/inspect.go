@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // InspectStorageDevice represents the inspect storage device command
@@ -29,15 +28,15 @@ func (i *InspectStorageDevice) Validate() error {
 }
 
 // Execute gathers and outputs detailed storage device information as JSON
-func (i *InspectStorageDevice) Execute() error {
+func (i *InspectStorageDevice) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(i.params)
 	if err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get device details
@@ -48,19 +47,18 @@ func (i *InspectStorageDevice) Execute() error {
 	detailOutput, err := mgr.RunCommand(detailCmd)
 
 	if err != nil || strings.TrimSpace(detailOutput) == "" {
-		return fmt.Errorf("storage device '%s' not found", i.params.DatastoreName)
+		return "", fmt.Errorf("storage device '%s' not found", i.params.DatastoreName)
 	}
 
 	i.parseDeviceFullDetail(device, detailOutput)
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(device)
+	formatted, err := utils.FormatAsJSON(device)
 	if err != nil {
-		return common.WrapError(err, "failed to format storage device info")
+		return "", common.WrapError(err, "failed to format storage device info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // parseDeviceFullDetail extracts comprehensive device details

@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // PortGroupInspect represents the portgroup inspect command
@@ -26,25 +25,25 @@ func (p *PortGroupInspect) Validate() error {
 }
 
 // Execute gathers and outputs comprehensive port group information as JSON
-func (p *PortGroupInspect) Execute() error {
+func (p *PortGroupInspect) Execute() (string, error) {
 	if p.params.PortgroupName == "" {
-		return fmt.Errorf("--portgroup-name parameter is required for portgroup-inspect")
+		return "", fmt.Errorf("--portgroup-name parameter is required for portgroup-inspect")
 	}
 
 	mgr, err := utils.NewSSHManager(p.params)
 	if err != nil {
-		return common.NewConnectionError(p.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(p.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(p.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(p.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all port groups
 	portgroups, err := p.gatherPortGroups(mgr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Find the requested port group
@@ -59,7 +58,7 @@ func (p *PortGroupInspect) Execute() error {
 	}
 
 	if !found {
-		return fmt.Errorf("portgroup '%s' not found", p.params.PortgroupName)
+		return "", fmt.Errorf("portgroup '%s' not found", p.params.PortgroupName)
 	}
 
 	// Enrich single port group with policies
@@ -70,13 +69,12 @@ func (p *PortGroupInspect) Execute() error {
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedPortGroup)
+	formatted, err := utils.FormatAsJSON(enrichedPortGroup)
 	if err != nil {
-		return common.WrapError(err, "failed to format portgroup info")
+		return "", common.WrapError(err, "failed to format portgroup info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // gatherPortGroups gathers port group information

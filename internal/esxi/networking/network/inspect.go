@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // NetworkInspect represents the network adapter inspect command
@@ -26,28 +25,27 @@ func (n *NetworkInspect) Validate() error {
 }
 
 // Execute gathers and outputs comprehensive network adapter information as JSON
-func (n *NetworkInspect) Execute() error {
+func (n *NetworkInspect) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(n.params)
 	if err != nil {
-		return common.NewConnectionError(n.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(n.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(n.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(n.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all network adapters (stub - would need specific VM/host implementation)
 	adapters := []config.NetworkAdapterInfo{}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(adapters)
+	formatted, err := utils.FormatAsJSON(adapters)
 	if err != nil {
-		return common.WrapError(err, "failed to format network adapter info")
+		return "", common.WrapError(err, "failed to format network adapter info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // GatherNetworkAdaptersForVM gathers network adapters for a specific VM

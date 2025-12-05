@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // InspectVMKnic represents the inspect VM kernel NIC command
@@ -29,15 +28,15 @@ func (i *InspectVMKnic) Validate() error {
 }
 
 // Execute gathers and outputs detailed VM kernel NIC information as JSON
-func (i *InspectVMKnic) Execute() error {
+func (i *InspectVMKnic) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(i.params)
 	if err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get KNIC details
@@ -48,7 +47,7 @@ func (i *InspectVMKnic) Execute() error {
 	detailOutput, err := mgr.RunCommand(detailCmd)
 
 	if err != nil || strings.TrimSpace(detailOutput) == "" {
-		return fmt.Errorf("VM kernel NIC '%s' not found", i.params.VMName)
+		return "", fmt.Errorf("VM kernel NIC '%s' not found", i.params.VMName)
 	}
 
 	i.parseVMKnicFullDetail(knic, detailOutput)
@@ -61,13 +60,12 @@ func (i *InspectVMKnic) Execute() error {
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(knic)
+	formatted, err := utils.FormatAsJSON(knic)
 	if err != nil {
-		return common.WrapError(err, "failed to format VM kernel NIC info")
+		return "", common.WrapError(err, "failed to format VM kernel NIC info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // parseVMKnicFullDetail extracts comprehensive KNIC details

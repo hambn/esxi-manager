@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -26,21 +25,20 @@ func (c *ListDatastoresCommand) Validate() error {
 	return nil
 }
 
-func (c *ListDatastoresCommand) Execute() error {
+func (c *ListDatastoresCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("esxcli storage filesystem list")
 	if err != nil {
-		return fmt.Errorf("failed to list datastores: %w", err)
+		return "", fmt.Errorf("failed to list datastores: %w", err)
 	}
 
 	datastores := c.parseDatastores(output)
-	c.displayDatastores(datastores)
-	return nil
+	return c.formatDatastores(datastores)
 }
 
 func (c *ListDatastoresCommand) parseDatastores(output string) []Datastore {
@@ -72,28 +70,12 @@ func (c *ListDatastoresCommand) parseDatastores(output string) []Datastore {
 	return datastores
 }
 
-func (c *ListDatastoresCommand) displayDatastores(datastores []Datastore) {
+func (c *ListDatastoresCommand) formatDatastores(datastores []Datastore) (string, error) {
 	if len(datastores) == 0 {
-		fmt.Println("No datastores found")
-		return
+		// Return empty JSON array
+		return utils.FormatAsJSON([]Datastore{})
 	}
-
-	var buf strings.Builder
-	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "Name\tType\tSize\tFree\tMounted\n")
-
-	for _, ds := range datastores {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			ds.VolumeName,
-			ds.Type,
-			utils.FormatBytes(ds.Size),
-			utils.FormatBytes(ds.Free),
-			ds.Mounted,
-		)
-	}
-
-	w.Flush()
-	fmt.Print(buf.String())
+	return utils.FormatAsJSON(datastores)
 }
 
 func toInt64(s string) int64 {

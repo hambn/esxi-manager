@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi"
 )
@@ -23,6 +25,7 @@ REQUIRED FLAGS:
 
 OPTIONAL FLAGS:
   --esxi-host-port       ESXi host SSH port (default: 22)
+  --raw-json             Output raw JSON without CLI formatting
 
 AVAILABLE COMMANDS:
   test-connection           Test SSH connectivity to ESXi host
@@ -85,6 +88,9 @@ func ParseFlags() (*esxi.Params, string, error) {
 }
 
 // Execute dispatches and executes the specified command
+// Handles output formatting based on the RawJSON parameter:
+//   - If RawJSON is true: outputs the raw JSON from the esxi command as-is
+//   - If RawJSON is false: parses JSON and formats as human-readable table/text
 func Execute(commandName string, params *esxi.Params) error {
 	// Dispatch command from registry
 	cmd, err := esxi.Dispatch(commandName, params)
@@ -97,9 +103,63 @@ func Execute(commandName string, params *esxi.Params) error {
 		return esxi.WrapError(err, "command validation failed")
 	}
 
-	// Execute the command
-	if err := cmd.Execute(); err != nil {
+	// Execute the command and get the JSON output
+	jsonOutput, err := cmd.Execute()
+	if err != nil {
 		return esxi.WrapError(err, "command execution failed")
+	}
+
+	// If RawJSON is true, output the raw JSON from esxi layer
+	if params.RawJSON {
+		fmt.Println(jsonOutput)
+		return nil
+	}
+
+	// Otherwise, format the JSON output as human-readable table/text
+	// Parse the JSON to determine the structure (array vs object)
+	var data interface{}
+	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
+		// If JSON parsing fails, just output the raw string
+		fmt.Println(jsonOutput)
+		return nil
+	}
+
+	// Format the output based on data type
+	switch v := data.(type) {
+	case []interface{}:
+		// Array of objects - format as table
+		if len(v) > 0 {
+			if mapData, ok := v[0].(map[string]interface{}); ok {
+				// Get column names from first object and sort them for consistent output
+				var columns []string
+				for col := range mapData {
+					columns = append(columns, col)
+				}
+				// Sort columns for consistent output
+				sort.Strings(columns)
+
+				// Convert to rows format for table formatter
+				var rows []map[string]interface{}
+				for _, item := range v {
+					rows = append(rows, item.(map[string]interface{}))
+				}
+
+				formatted := FormatAsTable(rows, columns)
+				fmt.Println(formatted)
+			} else {
+				fmt.Println(jsonOutput)
+			}
+		} else {
+			fmt.Println("No data")
+		}
+	case map[string]interface{}:
+		// Single object - output as readable key-value pairs
+		for key, value := range v {
+			fmt.Printf("%s: %v\n", key, value)
+		}
+	default:
+		// Fallback to raw JSON
+		fmt.Println(jsonOutput)
 	}
 
 	return nil

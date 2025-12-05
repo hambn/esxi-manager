@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // VSwitchInspect represents the vswitch inspect command
@@ -26,25 +25,25 @@ func (v *VSwitchInspect) Validate() error {
 }
 
 // Execute gathers and outputs comprehensive vswitch information as JSON
-func (v *VSwitchInspect) Execute() error {
+func (v *VSwitchInspect) Execute() (string, error) {
 	if v.params.VSwitchName == "" {
-		return fmt.Errorf("--vswitch-name parameter is required for vswitch-inspect")
+		return "", fmt.Errorf("--vswitch-name parameter is required for vswitch-inspect")
 	}
 
 	mgr, err := utils.NewSSHManager(v.params)
 	if err != nil {
-		return common.NewConnectionError(v.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(v.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(v.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(v.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all vswitches
 	vswitches, err := v.gatherVSwitches(mgr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Find the requested vswitch
@@ -59,7 +58,7 @@ func (v *VSwitchInspect) Execute() error {
 	}
 
 	if !found {
-		return fmt.Errorf("vswitch '%s' not found", v.params.VSwitchName)
+		return "", fmt.Errorf("vswitch '%s' not found", v.params.VSwitchName)
 	}
 
 	// Enrich single vswitch with policies
@@ -70,13 +69,12 @@ func (v *VSwitchInspect) Execute() error {
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedVSwitch)
+	formatted, err := utils.FormatAsJSON(enrichedVSwitch)
 	if err != nil {
-		return common.WrapError(err, "failed to format vswitch info")
+		return "", common.WrapError(err, "failed to format vswitch info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // gatherVSwitches gathers vswitch information

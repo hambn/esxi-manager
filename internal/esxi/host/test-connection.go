@@ -15,19 +15,18 @@ func (c *TestConnectionCommand) Validate() error {
 	return nil
 }
 
-func (c *TestConnectionCommand) Execute() error {
+func (c *TestConnectionCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	if _, err := manager.RunCommand("echo 'ESXi connection test'"); err != nil {
-		return fmt.Errorf("connection test failed: %w", err)
+		return "", fmt.Errorf("connection test failed: %w", err)
 	}
 
-	fmt.Println("Connection successful")
-	return nil
+	return "Connection successful", nil
 }
 
 func init() {

@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // InspectStorageAdapter represents the inspect storage adapter command
@@ -29,21 +28,21 @@ func (i *InspectStorageAdapter) Validate() error {
 }
 
 // Execute gathers and outputs detailed storage adapter information as JSON
-func (i *InspectStorageAdapter) Execute() error {
+func (i *InspectStorageAdapter) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(i.params)
 	if err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all storage adapters
 	allAdapters, err := i.gatherAllAdapters(mgr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Find the requested adapter
@@ -56,20 +55,19 @@ func (i *InspectStorageAdapter) Execute() error {
 	}
 
 	if targetAdapter == nil {
-		return fmt.Errorf("storage adapter '%s' not found", i.params.DatastoreName)
+		return "", fmt.Errorf("storage adapter '%s' not found", i.params.DatastoreName)
 	}
 
 	// Enrich with detailed information
 	i.enrichAdapterWithFullDetails(mgr, targetAdapter)
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(targetAdapter)
+	formatted, err := utils.FormatAsJSON(targetAdapter)
 	if err != nil {
-		return common.WrapError(err, "failed to format storage adapter info")
+		return "", common.WrapError(err, "failed to format storage adapter info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // gatherAllAdapters gathers all storage adapters

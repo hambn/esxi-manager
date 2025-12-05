@@ -3,19 +3,18 @@ package vswitch
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
 type VSwitchInfo struct {
-	Name          string
-	NumPorts      string
-	UsedPorts     string
-	MTU           string
-	Uplinks       string
-	PortGroups    string
+	Name       string
+	NumPorts   string
+	UsedPorts  string
+	MTU        string
+	Uplinks    string
+	PortGroups string
 }
 
 type ListVSwitchesCommand struct {
@@ -26,21 +25,20 @@ func (c *ListVSwitchesCommand) Validate() error {
 	return nil
 }
 
-func (c *ListVSwitchesCommand) Execute() error {
+func (c *ListVSwitchesCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("esxcli network vswitch standard list")
 	if err != nil {
-		return fmt.Errorf("failed to list vswitches: %w", err)
+		return "", fmt.Errorf("failed to list vswitches: %w", err)
 	}
 
 	vswitches := c.parseVSwitches(output)
-	c.displayVSwitches(vswitches)
-	return nil
+	return c.formatVSwitches(vswitches)
 }
 
 func (c *ListVSwitchesCommand) parseVSwitches(output string) []VSwitchInfo {
@@ -102,24 +100,12 @@ func (c *ListVSwitchesCommand) parseVSwitches(output string) []VSwitchInfo {
 	return vswitches
 }
 
-func (c *ListVSwitchesCommand) displayVSwitches(vswitches []VSwitchInfo) {
+func (c *ListVSwitchesCommand) formatVSwitches(vswitches []VSwitchInfo) (string, error) {
 	if len(vswitches) == 0 {
-		fmt.Println("No vswitches found")
-		return
+		// Return empty JSON array
+		return utils.FormatAsJSON([]VSwitchInfo{})
 	}
-
-	var buf strings.Builder
-	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "Name\tTotal Ports\tUsed Ports\tMTU\tUplinks\tPort Groups\n")
-
-	for _, vs := range vswitches {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			vs.Name, vs.NumPorts, vs.UsedPorts, vs.MTU, vs.Uplinks, vs.PortGroups,
-		)
-	}
-
-	w.Flush()
-	fmt.Print(buf.String())
+	return utils.FormatAsJSON(vswitches)
 }
 
 func init() {

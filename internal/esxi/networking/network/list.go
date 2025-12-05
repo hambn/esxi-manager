@@ -3,7 +3,6 @@ package network
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -28,21 +27,20 @@ func (c *ListNetworkAdaptersCommand) Validate() error {
 	return nil
 }
 
-func (c *ListNetworkAdaptersCommand) Execute() error {
+func (c *ListNetworkAdaptersCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("esxcli network nic list")
 	if err != nil {
-		return fmt.Errorf("failed to list network adapters: %w", err)
+		return "", fmt.Errorf("failed to list network adapters: %w", err)
 	}
 
 	adapters := c.parseNetworkAdapters(output)
-	c.displayNetworkAdapters(adapters)
-	return nil
+	return c.formatNetworkAdapters(adapters)
 }
 
 func (c *ListNetworkAdaptersCommand) parseNetworkAdapters(output string) []NetworkAdapterListInfo {
@@ -77,25 +75,12 @@ func (c *ListNetworkAdaptersCommand) parseNetworkAdapters(output string) []Netwo
 	return adapters
 }
 
-func (c *ListNetworkAdaptersCommand) displayNetworkAdapters(adapters []NetworkAdapterListInfo) {
+func (c *ListNetworkAdaptersCommand) formatNetworkAdapters(adapters []NetworkAdapterListInfo) (string, error) {
 	if len(adapters) == 0 {
-		fmt.Println("No network adapters found")
-		return
+		// Return empty JSON array
+		return utils.FormatAsJSON([]NetworkAdapterListInfo{})
 	}
-
-	var buf strings.Builder
-	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "Name\tPCI Device\tDriver\tAdmin Status\tLink Status\tSpeed\tDuplex\tMAC Address\n")
-
-	for _, adapter := range adapters {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			adapter.Name, adapter.PCI, adapter.Driver, adapter.AdminStatus,
-			adapter.LinkStatus, adapter.Speed, adapter.Duplex, adapter.MACAddress,
-		)
-	}
-
-	w.Flush()
-	fmt.Print(buf.String())
+	return utils.FormatAsJSON(adapters)
 }
 
 func init() {

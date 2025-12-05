@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -30,21 +29,20 @@ func (c *ListVMsCommand) Validate() error {
 	return nil
 }
 
-func (c *ListVMsCommand) Execute() error {
+func (c *ListVMsCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("vim-cmd vmsvc/getallvms")
 	if err != nil {
-		return fmt.Errorf("failed to list VMs: %w", err)
+		return "", fmt.Errorf("failed to list VMs: %w", err)
 	}
 
 	vms := c.parseVMs(output, manager)
-	c.displayVMs(vms)
-	return nil
+	return c.formatVMs(vms)
 }
 
 func (c *ListVMsCommand) parseVMs(output string, manager *utils.SSHManager) []VMListInfo {
@@ -154,24 +152,12 @@ func (c *ListVMsCommand) extractDiskUsage(vm *VMListInfo, manager *utils.SSHMana
 	}
 }
 
-func (c *ListVMsCommand) displayVMs(vms []VMListInfo) {
+func (c *ListVMsCommand) formatVMs(vms []VMListInfo) (string, error) {
 	if len(vms) == 0 {
-		fmt.Println("No virtual machines found")
-		return
+		// Return empty JSON array
+		return utils.FormatAsJSON([]VMListInfo{})
 	}
-
-	var buf strings.Builder
-	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tName\tGuest OS\tStatus\tCPU\tMemory\tUsed Space\n")
-
-	for _, vm := range vms {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			vm.ID, vm.Name, vm.GuestOS, vm.Status, vm.CPU, vm.Memory, vm.UsedSpace,
-		)
-	}
-
-	w.Flush()
-	fmt.Print(buf.String())
+	return utils.FormatAsJSON(vms)
 }
 
 func extractVMField(fields []string, index int, defaultValue string) string {

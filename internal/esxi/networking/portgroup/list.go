@@ -3,7 +3,6 @@ package portgroup
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
@@ -24,21 +23,20 @@ func (c *ListPortGroupsCommand) Validate() error {
 	return nil
 }
 
-func (c *ListPortGroupsCommand) Execute() error {
+func (c *ListPortGroupsCommand) Execute() (string, error) {
 	manager, err := utils.NewSSHManager(c.params)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH manager: %w", err)
+		return "", fmt.Errorf("failed to create SSH manager: %w", err)
 	}
 	defer manager.Close()
 
 	output, err := manager.RunCommand("esxcli network vswitch standard portgroup list")
 	if err != nil {
-		return fmt.Errorf("failed to list port groups: %w", err)
+		return "", fmt.Errorf("failed to list port groups: %w", err)
 	}
 
 	portgroups := c.parsePortGroups(output)
-	c.displayPortGroups(portgroups)
-	return nil
+	return c.formatPortGroups(portgroups)
 }
 
 func (c *ListPortGroupsCommand) parsePortGroups(output string) []PortGroupInfo {
@@ -76,24 +74,12 @@ func (c *ListPortGroupsCommand) parsePortGroups(output string) []PortGroupInfo {
 	return portgroups
 }
 
-func (c *ListPortGroupsCommand) displayPortGroups(portgroups []PortGroupInfo) {
+func (c *ListPortGroupsCommand) formatPortGroups(portgroups []PortGroupInfo) (string, error) {
 	if len(portgroups) == 0 {
-		fmt.Println("No port groups found")
-		return
+		// Return empty JSON array
+		return utils.FormatAsJSON([]PortGroupInfo{})
 	}
-
-	var buf strings.Builder
-	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "Name\tVSwitch\tActive Clients\tVLAN ID\n")
-
-	for _, pg := range portgroups {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			pg.Name, pg.VSwitch, pg.ActiveClients, pg.VLANID,
-		)
-	}
-
-	w.Flush()
-	fmt.Print(buf.String())
+	return utils.FormatAsJSON(portgroups)
 }
 
 func init() {

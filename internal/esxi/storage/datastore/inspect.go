@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // DatastoreInspect represents the datastore inspect command
@@ -28,25 +27,25 @@ func (d *DatastoreInspect) Validate() error {
 }
 
 // Execute gathers and outputs comprehensive datastore information as JSON
-func (d *DatastoreInspect) Execute() error {
+func (d *DatastoreInspect) Execute() (string, error) {
 	if d.params.DatastoreName == "" {
-		return fmt.Errorf("--datastore-name parameter is required for datastore-inspect")
+		return "", fmt.Errorf("--datastore-name parameter is required for datastore-inspect")
 	}
 
 	mgr, err := utils.NewSSHManager(d.params)
 	if err != nil {
-		return common.NewConnectionError(d.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(d.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(d.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(d.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all datastores
 	datastores, err := d.gatherDatastores(mgr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Find the requested datastore
@@ -62,7 +61,7 @@ func (d *DatastoreInspect) Execute() error {
 	}
 
 	if !found {
-		return fmt.Errorf("datastore '%s' not found", d.params.DatastoreName)
+		return "", fmt.Errorf("datastore '%s' not found", d.params.DatastoreName)
 	}
 
 	// Enrich single datastore with metadata
@@ -73,13 +72,12 @@ func (d *DatastoreInspect) Execute() error {
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(enrichedDatastore)
+	formatted, err := utils.FormatAsJSON(enrichedDatastore)
 	if err != nil {
-		return common.WrapError(err, "failed to format datastore info")
+		return "", common.WrapError(err, "failed to format datastore info")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // gatherDatastores gathers basic datastore information
@@ -119,10 +117,10 @@ func (d *DatastoreInspect) parseDatastoreListing(output string) []config.Datasto
 
 			if currentMount != "" {
 				ds := config.DatastoreInfo{
-					Name:      currentUUID,
-					Path:      currentPath,
-					Type:      currentType,
-					UUID:      currentUUID,
+					Name:       currentUUID,
+					Path:       currentPath,
+					Type:       currentType,
+					UUID:       currentUUID,
 					MountPoint: currentMount,
 					Mounted:    true,
 					Accessible: true,

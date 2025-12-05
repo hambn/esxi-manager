@@ -7,7 +7,6 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
-	"github.com/esxi-manager/esxi-manager/internal/presenter"
 )
 
 // ListStorageDevices represents the list storage devices command
@@ -26,31 +25,30 @@ func (l *ListStorageDevices) Validate() error {
 }
 
 // Execute gathers and outputs all storage devices as JSON
-func (l *ListStorageDevices) Execute() error {
+func (l *ListStorageDevices) Execute() (string, error) {
 	mgr, err := utils.NewSSHManager(l.params)
 	if err != nil {
-		return common.NewConnectionError(l.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", common.NewConnectionError(l.params.ESXiHostURI, "failed to create SSH manager", err)
 	}
 	defer mgr.Close()
 
 	if err := mgr.Connect(); err != nil {
-		return common.NewConnectionError(l.params.ESXiHostURI, "failed to connect", err)
+		return "", common.NewConnectionError(l.params.ESXiHostURI, "failed to connect", err)
 	}
 
 	// Get all storage devices
 	devices, err := l.gatherStorageDevices(mgr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Format as JSON
-	formatted, err := presenter.FormatAsJSON(devices)
+	formatted, err := utils.FormatAsJSON(devices)
 	if err != nil {
-		return common.WrapError(err, "failed to format storage devices")
+		return "", common.WrapError(err, "failed to format storage devices")
 	}
 
-	fmt.Println(formatted)
-	return nil
+	return formatted, nil
 }
 
 // gatherStorageDevices gathers all storage devices
