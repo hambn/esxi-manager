@@ -9,56 +9,8 @@ import (
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// FirewallService represents a firewall service from service.xml
-type FirewallService struct {
-	ID    string `xml:"id"`
-	Rules []struct {
-		Direction string `xml:"direction"`
-		Protocol  string `xml:"protocol"`
-		PortType  string `xml:"porttype"`
-		Port      string `xml:"port"`
-	} `xml:"rule"`
-	Enabled bool `xml:"enabled"`
-}
-
-// Friendly names mapping for firewall services
-var friendlyNames = map[string]string{
-	"sshServer":             "SSH Server",
-	"sshClient":             "SSH Client",
-	"dhcp":                  "DHCP Client",
-	"dns":                   "DNS",
-	"ntpClient":             "NTP Client",
-	"nfsClient":             "NFS Client",
-	"iSCSI":                 "iSCSI",
-	"vMotion":               "vMotion",
-	"vSphereClient":         "vSphere Client",
-	"webAccess":             "Web Access",
-	"updateManager":         "Update Manager",
-	"faultTolerance":        "Fault Tolerance",
-	"NFC":                   "NFC",
-	"HBR":                   "Host Backup and Restore",
-	"activeDirectoryAll":    "Active Directory",
-	"snmp":                  "SNMP",
-	"CIMHttpServer":         "CIM HTTP Server",
-	"CIMHttpsServer":        "CIM HTTPS Server",
-	"CIMSLP":                "CIM SLP",
-	"vpxHeartbeats":         "vCenter Heartbeats",
-	"ftpClient":             "FTP Client",
-	"httpClient":            "HTTP Client",
-	"gdbserver":             "GDB Server",
-	"DVFilter":              "DV Filter",
-	"DHCPv6":                "DHCP v6",
-	"DVSSync":               "DVS Sync",
-	"syslog":                "Syslog",
-	"WOL":                   "Wake On LAN",
-	"vSPC":                  "vSphere HA Servi",
-	"remoteSerialPort":      "Remote Serial Port",
-	"rdt":                   "Remote Desktop",
-	"cmmds":                 "CMMDS",
-}
-
-// RuleDetail represents a firewall rule with all details
-type RuleDetail struct {
+// FirewallRule represents a firewall rule entry
+type FirewallRule struct {
 	Name           string `json:"name"`
 	Key            string `json:"key"`
 	IncomingPorts  string `json:"incoming_ports,omitempty"`
@@ -66,6 +18,42 @@ type RuleDetail struct {
 	Protocols      string `json:"protocols,omitempty"`
 	Service        string `json:"service,omitempty"`
 	Daemon         string `json:"daemon,omitempty"`
+}
+
+// Friendly names mapping for firewall services
+var friendlyNames = map[string]string{
+	"sshServer":          "SSH Server",
+	"sshClient":          "SSH Client",
+	"dhcp":               "DHCP Client",
+	"dns":                "DNS",
+	"ntpClient":          "NTP Client",
+	"nfsClient":          "NFS Client",
+	"iSCSI":              "iSCSI",
+	"vMotion":            "vMotion",
+	"vSphereClient":      "vSphere Client",
+	"webAccess":          "Web Access",
+	"updateManager":      "Update Manager",
+	"faultTolerance":     "Fault Tolerance",
+	"NFC":                "NFC",
+	"HBR":                "Host Backup and Restore",
+	"activeDirectoryAll": "Active Directory",
+	"snmp":               "SNMP",
+	"CIMHttpServer":      "CIM HTTP Server",
+	"CIMHttpsServer":     "CIM HTTPS Server",
+	"CIMSLP":             "CIM SLP",
+	"vpxHeartbeats":      "vCenter Heartbeats",
+	"ftpClient":          "FTP Client",
+	"httpClient":         "HTTP Client",
+	"gdbserver":          "GDB Server",
+	"DVFilter":           "DV Filter",
+	"DHCPv6":             "DHCP v6",
+	"DVSSync":            "DVS Sync",
+	"syslog":             "Syslog",
+	"WOL":                "Wake On LAN",
+	"vSPC":               "vSphere HA Service",
+	"remoteSerialPort":   "Remote Serial Port",
+	"rdt":                "Remote Desktop",
+	"cmmds":              "CMMDS",
 }
 
 // listNetworkingFirewall lists all firewall rules on the ESXi host
@@ -76,52 +64,62 @@ func listNetworkingFirewall(params *config.Params) (string, error) {
 	}
 	defer mgr.Close()
 
-	// Read service.xml to get firewall rule details
-	xmlOutput, err := mgr.RunCommand("cat /etc/vmware/firewall/service.xml 2>/dev/null")
-	if err != nil || strings.TrimSpace(xmlOutput) == "" {
-		return utils.FormatAsJSON([]RuleDetail{})
+	// Read service.xml
+	output, err := mgr.RunCommand("cat /etc/vmware/firewall/service.xml 2>/dev/null")
+	if err != nil || strings.TrimSpace(output) == "" {
+		return utils.FormatAsJSON([]FirewallRule{})
 	}
 
 	// Parse XML
-	type ConfigRoot struct {
-		Services []FirewallService `xml:"service"`
+	type Service struct {
+		ID    string `xml:"id"`
+		Rules []struct {
+			Direction string `xml:"direction"`
+			Protocol  string `xml:"protocol"`
+			Port      string `xml:"port"`
+		} `xml:"rule"`
 	}
 
-	var config ConfigRoot
-	if err := xml.Unmarshal([]byte(xmlOutput), &config); err != nil {
-		return utils.FormatAsJSON([]RuleDetail{})
+	type Root struct {
+		Services []Service `xml:"service"`
 	}
 
-	var rules []RuleDetail
+	var root Root
+	if err := xml.Unmarshal([]byte(output), &root); err != nil {
+		return utils.FormatAsJSON([]FirewallRule{})
+	}
+
+	var rules []FirewallRule
 
 	// Process each service
-	for _, service := range config.Services {
-		rule := RuleDetail{
-			Key:     service.ID,
+	for _, svc := range root.Services {
+		rule := FirewallRule{
+			Key:     svc.ID,
 			Service: "N/A",
 			Daemon:  "None",
 		}
 
 		// Get friendly name or use service key
-		if friendlyName, exists := friendlyNames[service.ID]; exists {
+		if friendlyName, ok := friendlyNames[svc.ID]; ok {
 			rule.Name = friendlyName
 		} else {
-			rule.Name = service.ID
+			rule.Name = svc.ID
 		}
 
-		// Extract ports and protocols from rules
+		// Extract ports and protocols
 		var inboundPorts, outboundPorts []string
-		var protocols []string
 		protocolMap := make(map[string]bool)
+		var protocols []string
 
-		for _, r := range service.Rules {
-			protocol := strings.ToUpper(r.Protocol)
-			if !protocolMap[protocol] {
-				protocols = append(protocols, protocol)
-				protocolMap[protocol] = true
+		for _, r := range svc.Rules {
+			// Collect protocols
+			proto := strings.ToUpper(r.Protocol)
+			if !protocolMap[proto] {
+				protocols = append(protocols, proto)
+				protocolMap[proto] = true
 			}
 
-			// Extract port from port element (could be range with begin/end or single value)
+			// Collect ports
 			port := strings.TrimSpace(r.Port)
 			if port != "" {
 				if r.Direction == "inbound" || r.Direction == "Inbound" {
@@ -132,7 +130,7 @@ func listNetworkingFirewall(params *config.Params) (string, error) {
 			}
 		}
 
-		// Set ports and protocols
+		// Set fields
 		if len(inboundPorts) > 0 {
 			rule.IncomingPorts = strings.Join(inboundPorts, ", ")
 		}
@@ -146,12 +144,8 @@ func listNetworkingFirewall(params *config.Params) (string, error) {
 		rules = append(rules, rule)
 	}
 
-	// Convert to JSON manually to ensure proper output
-	jsonData, err := json.MarshalIndent(rules, "", "  ")
-	if err != nil {
-		return utils.FormatAsJSON(rules)
-	}
-
+	// Return JSON
+	jsonData, _ := json.MarshalIndent(rules, "", "  ")
 	return string(jsonData), nil
 }
 
