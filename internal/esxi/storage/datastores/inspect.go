@@ -4,97 +4,29 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// DatastoreInspect represents the datastore inspect command
-type DatastoreInspect struct {
-	params *config.Params
-}
-
-// NewDatastoreInspect creates a new datastore inspect command instance
-func NewDatastoreInspect(params *config.Params) *DatastoreInspect {
-	return &DatastoreInspect{params: params}
-}
-
-// Validate checks that required parameters are present
-func (d *DatastoreInspect) Validate() error {
-	// At least one datastore identifier should be provided
-	// This can be extended to support multiple ways to identify datastores
-	return nil
-}
-
-// Execute gathers and outputs comprehensive datastore information as JSON
-func (d *DatastoreInspect) Execute() (string, error) {
-	if d.params.DatastoreName == "" {
-		return "", fmt.Errorf("--datastore-name parameter is required for datastore-inspect")
+// inspectStorageDatastores inspects a specific datastore with comprehensive details
+func inspectStorageDatastores(params *config.Params) (string, error) {
+	if params.DatastoreName == "" {
+		return "", fmt.Errorf("--datastore-name parameter is required")
 	}
 
-	mgr, err := utils.NewSSHManager(d.params)
-	if err != nil {
-		return "", common.NewConnectionError(d.params.ESXiHostURI, "failed to create SSH manager", err)
-	}
-	defer mgr.Close()
-
-	if err := mgr.Connect(); err != nil {
-		return "", common.NewConnectionError(d.params.ESXiHostURI, "failed to connect", err)
-	}
-
-	// Get all datastores
-	datastores, err := d.gatherDatastores(mgr)
+	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
 		return "", err
 	}
+	defer mgr.Close()
 
-	// Find the requested datastore
-	var targetDatastore config.DatastoreInfo
-	found := false
-	for _, ds := range datastores {
-		// Match by name or UUID
-		if ds.Name == d.params.DatastoreName || ds.UUID == d.params.DatastoreName {
-			targetDatastore = ds
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return "", fmt.Errorf("datastore '%s' not found", d.params.DatastoreName)
-	}
-
-	// Enrich single datastore with metadata
-	enrichedDatastore, err := d.enrichDatastoreWithMetadata(mgr, targetDatastore)
-	if err != nil {
-		common.Debug("enrich datastore", "error", err.Error())
-		// Don't fail if enrichment fails - return basic info anyway
-	}
-
-	// Format as JSON
-	formatted, err := utils.FormatAsJSON(enrichedDatastore)
-	if err != nil {
-		return "", common.WrapError(err, "failed to format datastore info")
-	}
-
-	return formatted, nil
-}
-
-// gatherDatastores gathers basic datastore information
-func (d *DatastoreInspect) gatherDatastores(mgr *utils.SSHManager) ([]config.DatastoreInfo, error) {
 	// Query datastores using esxcli
 	output, err := mgr.RunCommand("esxcli storage filesystem list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
-		return nil, fmt.Errorf("failed to query datastores: %w", err)
+		return "", fmt.Errorf("failed to query datastores: %w", err)
 	}
 
-	return d.parseDatastoreListing(output), nil
-}
-
-// parseDatastoreListing parses esxcli datastore output
-func (d *DatastoreInspect) parseDatastoreListing(output string) []config.DatastoreInfo {
 	var datastores []config.DatastoreInfo
-
 	lines := strings.Split(output, "\n")
 	var currentMount string
 	var currentUUID string
@@ -127,7 +59,6 @@ func (d *DatastoreInspect) parseDatastoreListing(output string) []config.Datasto
 				}
 				datastores = append(datastores, ds)
 
-				// Reset for next datastore
 				currentMount = ""
 				currentUUID = ""
 				currentType = ""
@@ -136,123 +67,101 @@ func (d *DatastoreInspect) parseDatastoreListing(output string) []config.Datasto
 		}
 	}
 
-	return datastores
-}
+	// Find the requested datastore
+	var targetDatastore config.DatastoreInfo
+	found := false
+	for _, ds := range datastores {
+		if ds.Name == params.DatastoreName || ds.UUID == params.DatastoreName {
+			targetDatastore = ds
+			found = true
+			break
+		}
+	}
 
-// enrichDatastoreWithMetadata queries additional datastore metadata for a single datastore
-func (d *DatastoreInspect) enrichDatastoreWithMetadata(mgr *utils.SSHManager, ds config.DatastoreInfo) (config.DatastoreInfo, error) {
-	if ds.UUID == "" {
-		return ds, nil
+	if !found {
+		return "", fmt.Errorf("datastore '%s' not found", params.DatastoreName)
 	}
 
 	// Query detailed info using esxcli
-	detailCmd := fmt.Sprintf("esxcli storage filesystem info -l '%s' 2>/dev/null", ds.UUID)
+	detailCmd := fmt.Sprintf("esxcli storage filesystem info -l '%s' 2>/dev/null", targetDatastore.UUID)
 	detailOutput, _ := mgr.RunCommand(detailCmd)
 
 	if detailOutput != "" {
-		// Parse detailed information
-		ds = d.parseDatastoreDetail(ds, detailOutput)
+		detailLines := strings.Split(detailOutput, "\n")
+		for _, line := range detailLines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			if strings.Contains(line, "Type:") && strings.Contains(line, ":") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					targetDatastore.Type = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "Version:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					targetDatastore.Version = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "Local:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					val := strings.TrimSpace(parts[1])
+					targetDatastore.Local = val == "Yes" || val == "true" || val == "1"
+				}
+			} else if strings.Contains(line, "Block size:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					targetDatastore.BlockSize = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "Hosts:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &targetDatastore.HostCount)
+				}
+			} else if strings.Contains(line, "Virtual Machines:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &targetDatastore.VMCount)
+				}
+			} else if strings.Contains(line, "Extent") && strings.Contains(line, ":") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					extentStr := strings.TrimSpace(parts[1])
+					if extentStr != "" && extentStr != "Unknown" {
+						targetDatastore.Extents = []string{extentStr}
+					}
+				}
+			} else if strings.Contains(line, "Accessible:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					val := strings.TrimSpace(parts[1])
+					targetDatastore.Accessible = val == "Yes" || val == "true" || val == "1"
+				}
+			}
+		}
 	}
 
 	// Get capacity info using df
-	if ds.Path != "" {
-		dfCmd := fmt.Sprintf("df -h %s 2>/dev/null | tail -1", ds.Path)
+	if targetDatastore.Path != "" {
+		dfCmd := fmt.Sprintf("df -h %s 2>/dev/null | tail -1", targetDatastore.Path)
 		dfOutput, _ := mgr.RunCommand(dfCmd)
 		if dfOutput != "" {
-			ds = d.parseDatastoreCapacity(ds, dfOutput)
-		}
-	}
+			fields := strings.Fields(dfOutput)
+			if len(fields) >= 4 {
+				parseSizeValue(fields[1], &targetDatastore.Capacity)
+				parseSizeValue(fields[2], &targetDatastore.UsedSpace)
+				parseSizeValue(fields[3], &targetDatastore.FreeSpace)
 
-	return ds, nil
-}
-
-// parseDatastoreDetail parses detailed datastore information
-func (d *DatastoreInspect) parseDatastoreDetail(ds config.DatastoreInfo, output string) config.DatastoreInfo {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if strings.Contains(line, "Type:") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				ds.Type = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Version:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				ds.Version = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Local:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				ds.Local = val == "Yes" || val == "true" || val == "1"
-			}
-		} else if strings.Contains(line, "Block size:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				ds.BlockSize = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Hosts:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				var hostCount int
-				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &hostCount)
-				if hostCount > 0 {
-					ds.HostCount = hostCount
+				if targetDatastore.Capacity > 0 {
+					targetDatastore.UsagePercent = float64(targetDatastore.UsedSpace) / float64(targetDatastore.Capacity) * 100
 				}
-			}
-		} else if strings.Contains(line, "Virtual Machines:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				var vmCount int
-				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &vmCount)
-				if vmCount > 0 {
-					ds.VMCount = vmCount
-				}
-			}
-		} else if strings.Contains(line, "Extent") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				extentStr := strings.TrimSpace(parts[1])
-				if extentStr != "" && extentStr != "Unknown" {
-					ds.Extents = []string{extentStr}
-				}
-			}
-		} else if strings.Contains(line, "Accessible:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				ds.Accessible = val == "Yes" || val == "true" || val == "1"
 			}
 		}
 	}
 
-	return ds
-}
-
-// parseDatastoreCapacity parses df output for capacity information
-func (d *DatastoreInspect) parseDatastoreCapacity(ds config.DatastoreInfo, dfOutput string) config.DatastoreInfo {
-	fields := strings.Fields(dfOutput)
-	if len(fields) < 4 {
-		return ds
-	}
-
-	// df -h format: Filesystem Size Used Avail Use% Mounted on
-	// fields[0] = filesystem, fields[1] = size, fields[2] = used, fields[3] = available
-	parseSizeValue(fields[1], &ds.Capacity)
-	parseSizeValue(fields[2], &ds.UsedSpace)
-	parseSizeValue(fields[3], &ds.FreeSpace)
-
-	// Calculate usage percentage
-	if ds.Capacity > 0 {
-		ds.UsagePercent = float64(ds.UsedSpace) / float64(ds.Capacity) * 100
-	}
-
-	return ds
+	return utils.FormatAsJSON(targetDatastore)
 }
 
 // parseSizeValue parses human-readable size (1K, 1M, 1G) to bytes
@@ -278,23 +187,6 @@ func parseSizeValue(sizeStr string, target *int64) {
 	}
 
 	*target = int64(size * float64(multiplier))
-}
-
-// inspectStorageDatastores inspects a specific datastore with comprehensive details
-func inspectStorageDatastores(params *config.Params) (string, error) {
-	if params.DatastoreName == "" {
-		return "", fmt.Errorf("--datastore-name parameter is required for inspect-storage-datastores")
-	}
-
-	mgr, err := utils.NewSSHManager(params)
-	if err != nil {
-		return "", err
-	}
-	defer mgr.Close()
-
-	// Use existing implementation
-	cmd := NewDatastoreInspect(params)
-	return cmd.Execute()
 }
 
 func init() {

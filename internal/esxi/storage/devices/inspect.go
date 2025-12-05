@@ -4,67 +4,34 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
 
-// InspectStorageDevice represents the inspect storage device command
-type InspectStorageDevice struct {
-	params *config.Params
-}
-
-// NewInspectStorageDevice creates a new inspect storage device command instance
-func NewInspectStorageDevice(params *config.Params) *InspectStorageDevice {
-	return &InspectStorageDevice{params: params}
-}
-
-// Validate checks that required parameters are present
-func (i *InspectStorageDevice) Validate() error {
-	if i.params.DatastoreName == "" {
-		return fmt.Errorf("--datastore-name parameter is required for inspect-storage-device (use device name)")
+// inspectStorageDevices inspects a specific storage device with detailed information
+func inspectStorageDevices(params *config.Params) (string, error) {
+	if params.DatastoreName == "" {
+		return "", fmt.Errorf("--datastore-name parameter is required (use device name)")
 	}
-	return nil
-}
 
-// Execute gathers and outputs detailed storage device information as JSON
-func (i *InspectStorageDevice) Execute() (string, error) {
-	mgr, err := utils.NewSSHManager(i.params)
+	mgr, err := utils.NewSSHManager(params)
 	if err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
+		return "", err
 	}
 	defer mgr.Close()
 
-	if err := mgr.Connect(); err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
-	}
-
-	// Get device details
-	device := &config.StorageDeviceInfo{Name: i.params.DatastoreName}
-
 	// Query detailed device info
-	detailCmd := fmt.Sprintf("esxcli storage core device get -d '%s' 2>/dev/null", device.Name)
+	detailCmd := fmt.Sprintf("esxcli storage core device get -d '%s' 2>/dev/null", params.DatastoreName)
 	detailOutput, err := mgr.RunCommand(detailCmd)
 
 	if err != nil || strings.TrimSpace(detailOutput) == "" {
-		return "", fmt.Errorf("storage device '%s' not found", i.params.DatastoreName)
+		return "", fmt.Errorf("storage device '%s' not found", params.DatastoreName)
 	}
 
-	i.parseDeviceFullDetail(device, detailOutput)
+	device := &config.StorageDeviceInfo{Name: params.DatastoreName}
 
-	// Format as JSON
-	formatted, err := utils.FormatAsJSON(device)
-	if err != nil {
-		return "", common.WrapError(err, "failed to format storage device info")
-	}
-
-	return formatted, nil
-}
-
-// parseDeviceFullDetail extracts comprehensive device details
-func (i *InspectStorageDevice) parseDeviceFullDetail(device *config.StorageDeviceInfo, output string) {
-	lines := strings.Split(output, "\n")
-
+	// Parse device details from output
+	lines := strings.Split(detailOutput, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -119,18 +86,8 @@ func (i *InspectStorageDevice) parseDeviceFullDetail(device *config.StorageDevic
 			}
 		}
 	}
-}
 
-// inspectStorageDevices inspects storage devices
-func inspectStorageDevices(params *config.Params) (string, error) {
-	mgr, err := utils.NewSSHManager(params)
-	if err != nil {
-		return "", err
-	}
-	defer mgr.Close()
-
-	cmd := NewInspectStorageDevice(params)
-	return cmd.Execute()
+	return utils.FormatAsJSON(device)
 }
 
 func init() {

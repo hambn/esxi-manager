@@ -5,108 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/esxi-manager/esxi-manager/internal/esxi/common"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/config"
 	"github.com/esxi-manager/esxi-manager/internal/esxi/utils"
 )
-
-// InspectVM represents the inspect command for detailed VM information
-type InspectVM struct {
-	params *config.Params
-}
-
-// NewInspectVM creates a new inspect command instance
-func NewInspectVM(params *config.Params) *InspectVM {
-	return &InspectVM{params: params}
-}
-
-// Validate checks that required parameters are present
-func (i *InspectVM) Validate() error {
-	if i.params.VMInspectID == "" && i.params.VMInspectName == "" {
-		return common.NewValidationError("vm-inspect-id or vm-inspect-name", "at least one must be provided")
-	}
-	return nil
-}
-
-// Execute gathers and outputs comprehensive VM information as JSON
-func (i *InspectVM) Execute() (string, error) {
-	mgr, err := utils.NewSSHManager(i.params)
-	if err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to create SSH manager", err)
-	}
-	defer mgr.Close()
-
-	if err := mgr.Connect(); err != nil {
-		return "", common.NewConnectionError(i.params.ESXiHostURI, "failed to connect", err)
-	}
-
-	// Resolve VM ID if only name is provided
-	vmID := i.params.VMInspectID
-	if vmID == "" {
-		id, err := i.resolveVMIDFromName(mgr, i.params.VMInspectName)
-		if err != nil {
-			return "", err
-		}
-		vmID = id
-	}
-
-	// Gather all VM information
-	info, err := i.gatherVMInfo(mgr, vmID)
-	if err != nil {
-		return "", err
-	}
-
-	// Ensure all fields are properly initialized for JSON output
-	if info.Networks == nil {
-		info.Networks = []NetworkInfo{}
-	}
-	if info.VSwitches == nil {
-		info.VSwitches = []VSwitchInfo{}
-	}
-	if info.Disks == nil {
-		info.Disks = []DiskInfo{}
-	}
-	if info.Datastores == nil {
-		info.Datastores = []DatastoreInfo{}
-	}
-	if info.Snapshots == nil {
-		info.Snapshots = []SnapshotInfo{}
-	}
-	if info.VMXConfig == nil {
-		info.VMXConfig = make(map[string]string)
-	}
-	if info.VMDKConfigs == nil {
-		info.VMDKConfigs = []VMDKInfo{}
-	}
-
-	// Output as JSON with all fields
-	jsonData, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		return "", common.WrapError(err, "failed to marshal JSON")
-	}
-
-	return string(jsonData), nil
-}
-
-// resolveVMIDFromName finds VM ID by name
-func (i *InspectVM) resolveVMIDFromName(mgr *utils.SSHManager, vmName string) (string, error) {
-	output, err := mgr.RunCommand("vim-cmd vmsvc/getallvms | grep '" + vmName + "'")
-	if err != nil {
-		return "", common.WrapError(err, "failed to query VMs")
-	}
-
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) == 0 {
-		return "", fmt.Errorf("VM '%s' not found", vmName)
-	}
-
-	parts := strings.Fields(lines[0])
-	if len(parts) == 0 {
-		return "", fmt.Errorf("invalid VM list format")
-	}
-
-	return parts[0], nil
-}
 
 // ============================================================================
 // DATA STRUCTURES
@@ -303,36 +204,36 @@ type GeometryInfo struct {
 // ============================================================================
 
 // gatherVMInfo collects comprehensive VM information
-func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVMInfo, error) {
+func gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVMInfo, error) {
 	info := &InspectVMInfo{
 		ID:        vmID,
 		VMXConfig: make(map[string]string),
 	}
 
 	// Phase 1: Get basic VM info from vim-cmd
-	if err := i.getBasicInfo(mgr, vmID, info); err != nil {
+	if err := getBasicInfo(mgr, vmID, info); err != nil {
 		return nil, err
 	}
 
 	// Phase 2: Get hardware and runtime info
-	if err := i.getHardwareInfo(mgr, vmID, info); err != nil {
+	if err := getHardwareInfo(mgr, vmID, info); err != nil {
 		return nil, err
 	}
 
 	// Phase 3: Parse VMX file for detailed configuration
-	if err := i.parseVMXFile(mgr, info); err != nil {
-		common.Debug("parse VMX file", "error", err.Error())
+	if err := parseVMXFile(mgr, info); err != nil {
+		fmt.Printf("DEBUG: parse VMX file: %v\n", err)
 	}
 
 	// Phase 4: Parse VMDK files for disk information (MUST be before disk extraction!)
-	if err := i.parseVMDKFiles(mgr, info); err != nil {
-		common.Debug("parse VMDK files", "error", err.Error())
+	if err := parseVMDKFiles(mgr, info); err != nil {
+		fmt.Printf("DEBUG: parse VMDK files: %v\n", err)
 	}
 
 	// Phase 5: Extract organized data from VMX config (now VMDK data is available)
 	if len(info.VMXConfig) > 0 {
-		i.extractNetworkDetailsFromVMX(info)
-		i.extractDiskDetailsFromVMX(info)
+		extractNetworkDetailsFromVMX(info)
+		extractDiskDetailsFromVMX(info)
 		if info.GuestOS == "" {
 			if guestOS, ok := info.VMXConfig["guestOS"]; ok && guestOS != "" {
 				info.GuestOS = guestOS
@@ -341,23 +242,23 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 	}
 
 	// Phase 5b: Enrich network details with infrastructure info (vswitch, VLAN, active clients)
-	i.enrichNetworkDetailsWithInfrastructure(mgr, info)
+	enrichNetworkDetailsWithInfrastructure(mgr, info)
 
 	// Phase 6: Get snapshots
-	if err := i.getSnapshots(mgr, vmID, info); err != nil {
-		common.Debug("get snapshots", "error", err.Error())
+	if err := getSnapshots(mgr, vmID, info); err != nil {
+		fmt.Printf("DEBUG: get snapshots: %v\n", err)
 	}
 
 	// Phase 7: Get datastores
-	if err := i.getDatastores(mgr, vmID, info); err != nil {
-		common.Debug("get datastores", "error", err.Error())
+	if err := getDatastores(mgr, vmID, info); err != nil {
+		fmt.Printf("DEBUG: get datastores: %v\n", err)
 	}
 
 	// Phase 7b: Enrich datastore details with metadata (UUID, mount point, type)
-	i.enrichDatastoreDetailsWithMetadata(mgr, info)
+	enrichDatastoreDetailsWithMetadata(mgr, info)
 
 	// Phase 8: Enrich vswitch details from network vswitches
-	i.enrichVSwitchDetailsWithInfrastructure(mgr, info)
+	enrichVSwitchDetailsWithInfrastructure(mgr, info)
 
 	// Phase 9: Populate hardware info
 	info.Hardware = config.HardwareInfo{
@@ -376,10 +277,10 @@ func (i *InspectVM) gatherVMInfo(mgr *utils.SSHManager, vmID string) (*InspectVM
 // ============================================================================
 
 // getBasicInfo retrieves basic VM information from vim-cmd get.summary
-func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+func getBasicInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.summary %s", vmID))
 	if err != nil {
-		return common.WrapError(err, "failed to get basic VM info")
+		return fmt.Errorf("failed to get basic VM info: %w", err)
 	}
 
 	// Basic identification
@@ -427,10 +328,10 @@ func (i *InspectVM) getBasicInfo(mgr *utils.SSHManager, vmID string, info *Inspe
 }
 
 // getHardwareInfo retrieves hardware configuration and metadata from vim-cmd get.config
-func (i *InspectVM) getHardwareInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+func getHardwareInfo(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/get.config %s 2>/dev/null", vmID))
 	if err != nil {
-		return common.WrapError(err, "failed to get hardware info")
+		return fmt.Errorf("failed to get hardware info: %w", err)
 	}
 
 	// Hardware specifications
@@ -473,7 +374,7 @@ func (i *InspectVM) getHardwareInfo(mgr *utils.SSHManager, vmID string, info *In
 // ============================================================================
 
 // getSnapshots retrieves snapshot information
-func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+func getSnapshots(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	output, err := mgr.RunCommand(fmt.Sprintf("vim-cmd vmsvc/snapshot.get %s 2>/dev/null", vmID))
 	if err != nil || output == "" {
 		info.Snapshots = nil
@@ -519,7 +420,7 @@ func (i *InspectVM) getSnapshots(mgr *utils.SSHManager, vmID string, info *Inspe
 }
 
 // getDatastores retrieves datastore information from disk file paths
-func (i *InspectVM) getDatastores(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
+func getDatastores(mgr *utils.SSHManager, vmID string, info *InspectVMInfo) error {
 	seenDatastores := make(map[string]bool)
 	var datastorePaths []string
 
@@ -610,7 +511,7 @@ func (i *InspectVM) getDatastores(mgr *utils.SSHManager, vmID string, info *Insp
 // ============================================================================
 
 // parseVMXFile reads and parses the .vmx configuration file
-func (i *InspectVM) parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) error {
+func parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) error {
 	if info.ConfigPath == "" {
 		return fmt.Errorf("no config path available")
 	}
@@ -628,10 +529,10 @@ func (i *InspectVM) parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) err
 			vmxPath = strings.TrimSpace(findOutput)
 			output, err = mgr.RunCommand(fmt.Sprintf("cat '%s' 2>/dev/null", vmxPath))
 			if err != nil {
-				return common.WrapError(err, "failed to read VMX file")
+				return fmt.Errorf("failed to read VMX file")
 			}
 		} else {
-			return common.WrapError(err, "failed to read VMX file")
+			return fmt.Errorf("failed to read VMX file")
 		}
 	}
 
@@ -656,7 +557,7 @@ func (i *InspectVM) parseVMXFile(mgr *utils.SSHManager, info *InspectVMInfo) err
 }
 
 // parseVMDKFiles reads and parses .vmdk descriptor files
-func (i *InspectVM) parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) error {
+func parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) error {
 	if info.ConfigPath == "" {
 		return fmt.Errorf("no config path available")
 	}
@@ -684,9 +585,9 @@ func (i *InspectVM) parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) e
 			continue
 		}
 
-		vmdk, err := i.parseVMDKFile(mgr, vmxFile)
+		vmdk, err := parseVMDKFile(mgr, vmxFile)
 		if err != nil {
-			common.Debug("parse VMDK file", "file", vmxFile, "error", err.Error())
+			// Debug: skip VMDK file parsing error
 			continue
 		}
 		info.VMDKConfigs = append(info.VMDKConfigs, vmdk)
@@ -696,7 +597,7 @@ func (i *InspectVM) parseVMDKFiles(mgr *utils.SSHManager, info *InspectVMInfo) e
 }
 
 // parseVMDKFile parses a single VMDK descriptor file
-func (i *InspectVM) parseVMDKFile(mgr *utils.SSHManager, vmxPath string) (VMDKInfo, error) {
+func parseVMDKFile(mgr *utils.SSHManager, vmxPath string) (VMDKInfo, error) {
 	vmdk := VMDKInfo{
 		Filename:      vmxPath,
 		DDBParameters: make(map[string]string),
@@ -723,7 +624,7 @@ func (i *InspectVM) parseVMDKFile(mgr *utils.SSHManager, vmxPath string) (VMDKIn
 
 		// Parse extent descriptions (they don't have "=" in them)
 		if section == "extent" && (strings.HasPrefix(line, "RW ") || strings.HasPrefix(line, "RDONLY ")) {
-			extent := i.parseExtentLine(line)
+			extent := parseExtentLine(line)
 			vmdk.Extents = append(vmdk.Extents, extent)
 			// Set capacity from the first extent's sectors
 			if vmdk.Capacity == 0 && extent.Sectors > 0 {
@@ -785,7 +686,7 @@ func (i *InspectVM) parseVMDKFile(mgr *utils.SSHManager, vmxPath string) (VMDKIn
 }
 
 // parseExtentLine parses an extent description line
-func (i *InspectVM) parseExtentLine(line string) ExtentInfo {
+func parseExtentLine(line string) ExtentInfo {
 	extent := ExtentInfo{}
 	fields := strings.Fields(line)
 
@@ -804,7 +705,7 @@ func (i *InspectVM) parseExtentLine(line string) ExtentInfo {
 // ============================================================================
 
 // extractNetworkDetailsFromVMX extracts network adapter info from VMX config
-func (i *InspectVM) extractNetworkDetailsFromVMX(info *InspectVMInfo) {
+func extractNetworkDetailsFromVMX(info *InspectVMInfo) {
 	info.Networks = nil
 
 	for idx := 0; idx < 10; idx++ {
@@ -838,7 +739,7 @@ func (i *InspectVM) extractNetworkDetailsFromVMX(info *InspectVMInfo) {
 }
 
 // extractDiskDetailsFromVMX extracts disk info from VMX config and enriches with size/datastore
-func (i *InspectVM) extractDiskDetailsFromVMX(info *InspectVMInfo) {
+func extractDiskDetailsFromVMX(info *InspectVMInfo) {
 	info.Disks = nil
 
 	// Build a map of VMDK filenames (basename) to their sizes from parsed VMDK configs
@@ -1183,7 +1084,7 @@ func parseSizeValue(sizeStr string, target *int64) {
 }
 
 // enrichNetworkDetailsWithInfrastructure populates network info with comprehensive vswitch and portgroup details
-func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
+func enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
 	if len(info.Networks) == 0 {
 		return
 	}
@@ -1191,7 +1092,7 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 	// Get all port groups with esxcli
 	output, err := mgr.RunCommand("esxcli network vswitch standard portgroup list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
-		common.Debug("enrich networks", "error", "failed to get portgroups from esxcli")
+		// Debug: failed to get portgroups from esxcli
 		return
 	}
 
@@ -1300,7 +1201,7 @@ func (i *InspectVM) enrichNetworkDetailsWithInfrastructure(mgr *utils.SSHManager
 }
 
 // enrichDatastoreDetailsWithMetadata populates datastore info with comprehensive metadata
-func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, info *InspectVMInfo) {
+func enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, info *InspectVMInfo) {
 	if len(info.Datastores) == 0 {
 		return
 	}
@@ -1308,7 +1209,7 @@ func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, in
 	// Get all filesystem info with esxcli
 	output, err := mgr.RunCommand("esxcli storage filesystem list 2>/dev/null")
 	if err != nil || strings.TrimSpace(output) == "" {
-		common.Debug("enrich datastores", "error", "failed to get filesystems from esxcli")
+		// Debug: failed to get filesystems from esxcli
 		return
 	}
 
@@ -1412,7 +1313,7 @@ func (i *InspectVM) enrichDatastoreDetailsWithMetadata(mgr *utils.SSHManager, in
 }
 
 // enrichVSwitchDetailsWithInfrastructure populates vswitch info from the networks' vswitches
-func (i *InspectVM) enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
+func enrichVSwitchDetailsWithInfrastructure(mgr *utils.SSHManager, info *InspectVMInfo) {
 	if len(info.Networks) == 0 {
 		return
 	}
@@ -1658,6 +1559,30 @@ func parseVMsField(vmsStr string, totalVMs, activeVMs *int) {
 }
 
 // ============================================================================
+// VM ID RESOLUTION
+// ============================================================================
+
+// resolveVMIDFromName finds VM ID by name
+func resolveVMIDFromName(mgr *utils.SSHManager, vmName string) (string, error) {
+	output, err := mgr.RunCommand("vim-cmd vmsvc/getallvms | grep '" + vmName + "'")
+	if err != nil {
+		return "", fmt.Errorf("failed to query VMs: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 0 {
+		return "", fmt.Errorf("VM '%s' not found", vmName)
+	}
+
+	parts := strings.Fields(lines[0])
+	if len(parts) == 0 {
+		return "", fmt.Errorf("invalid VM list format")
+	}
+
+	return parts[0], nil
+}
+
+// ============================================================================
 // COMMAND REGISTRATION
 // ============================================================================
 
@@ -1673,9 +1598,52 @@ func inspectVMs(params *config.Params) (string, error) {
 	}
 	defer mgr.Close()
 
-	// Create a temporary InspectVM to use existing methods
-	cmd := NewInspectVM(params)
-	return cmd.Execute()
+	// Resolve VM ID if only name is provided
+	vmID := params.VMInspectID
+	if vmID == "" {
+		id, err := resolveVMIDFromName(mgr, params.VMInspectName)
+		if err != nil {
+			return "", err
+		}
+		vmID = id
+	}
+
+	// Gather all VM information
+	info, err := gatherVMInfo(mgr, vmID)
+	if err != nil {
+		return "", err
+	}
+
+	// Ensure all fields are properly initialized for JSON output
+	if info.Networks == nil {
+		info.Networks = []NetworkInfo{}
+	}
+	if info.VSwitches == nil {
+		info.VSwitches = []VSwitchInfo{}
+	}
+	if info.Disks == nil {
+		info.Disks = []DiskInfo{}
+	}
+	if info.Datastores == nil {
+		info.Datastores = []DatastoreInfo{}
+	}
+	if info.Snapshots == nil {
+		info.Snapshots = []SnapshotInfo{}
+	}
+	if info.VMXConfig == nil {
+		info.VMXConfig = make(map[string]string)
+	}
+	if info.VMDKConfigs == nil {
+		info.VMDKConfigs = []VMDKInfo{}
+	}
+
+	// Output as JSON with all fields
+	jsonData, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	return string(jsonData), nil
 }
 
 func init() {
