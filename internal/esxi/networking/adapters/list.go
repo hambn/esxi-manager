@@ -39,11 +39,6 @@ func (c *ListNetworkAdaptersCommand) Execute() (string, error) {
 		return "", fmt.Errorf("failed to list network adapters: %w", err)
 	}
 
-	adapters := c.parseNetworkAdapters(output)
-	return c.formatNetworkAdapters(adapters)
-}
-
-func (c *ListNetworkAdaptersCommand) parseNetworkAdapters(output string) []NetworkAdapterListInfo {
 	var adapters []NetworkAdapterListInfo
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
@@ -58,7 +53,7 @@ func (c *ListNetworkAdaptersCommand) parseNetworkAdapters(output string) []Netwo
 			continue
 		}
 
-		adapter := NetworkAdapterListInfo{
+		adapters = append(adapters, NetworkAdapterListInfo{
 			Name:        fields[0],
 			PCI:         fields[1],
 			Driver:      fields[2],
@@ -67,19 +62,9 @@ func (c *ListNetworkAdaptersCommand) parseNetworkAdapters(output string) []Netwo
 			Speed:       fields[5],
 			Duplex:      fields[6],
 			MACAddress:  fields[7],
-		}
-
-		adapters = append(adapters, adapter)
+		})
 	}
 
-	return adapters
-}
-
-func (c *ListNetworkAdaptersCommand) formatNetworkAdapters(adapters []NetworkAdapterListInfo) (string, error) {
-	if len(adapters) == 0 {
-		// Return empty JSON array
-		return utils.FormatAsJSON([]NetworkAdapterListInfo{})
-	}
 	return utils.FormatAsJSON(adapters)
 }
 
