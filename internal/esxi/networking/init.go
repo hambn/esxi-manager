@@ -5,6 +5,8 @@ package networking
 
 import (
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/adapters"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/firewall"
+	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/netstacks"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/portgroups"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/vmknics"
 	_ "github.com/esxi-manager/esxi-manager/internal/esxi/networking/vswitches"
